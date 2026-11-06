@@ -54,7 +54,7 @@ canvas#game{position:fixed;inset:0;display:block}
 #zone.show{animation:zn 4s}
 @keyframes zn{0%{opacity:0;transform:translateX(30px)}12%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
 #sub{position:absolute;left:50%;transform:translateX(-50%);bottom:15vh;width:min(80vw,900px);text-align:center;font-size:28px;font-family:Arial,sans-serif;font-weight:bold;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000}
-#sub .who{color:#7fd36b}#sub .wl{color:#6db8ff}
+#sub .mr{color:#e59bff}#sub .who{color:#7fd36b}#sub .wl{color:#6db8ff}
 #prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:28vh;font-size:26px;font-family:Arial,sans-serif;font-weight:bold;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000}
 #prompt b{color:#ffc933}
 #speedo{position:absolute;right:30px;bottom:130px;font-size:44px;text-align:right}
@@ -147,6 +147,7 @@ body.touch #prompt,body.touch .hint{display:none}
  <label>Чувствительность мыши <input type="range" id="setSens" min="1" max="10" step="1"></label>
  <label>Громкость <input type="range" id="setVol" min="0" max="100"></label>
  <label>Тени <input type="checkbox" id="setShadow"></label>
+ <label>Имя героя <input type="text" id="setHero" maxlength="24" style="width:170px;padding:6px 8px;font-size:16px"></label>
  <label>Дальность прорисовки <select id="setDist"><option value="0">Низкая</option><option value="1">Средняя</option><option value="2">Высокая</option></select></label>
  <label>Полный экран <input type="checkbox" id="setFull"></label>
  <label>Сенсорное управление <input type="checkbox" id="setTouch"></label>
@@ -177,7 +178,8 @@ const angDiff=(a,b)=>{let d=(b-a)%PI2;if(d>Math.PI)d-=PI2;if(d<-Math.PI)d+=PI2;r
 const rr=(a,b)=>a+Math.random()*(b-a);
 const ri=(a,b)=>Math.floor(rr(a,b+1));
 const store={get(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
-const settings=Object.assign({sens:5,vol:60,shadows:true,dist:1},store.get('ps_settings')||{});
+const settings=Object.assign({sens:5,vol:60,shadows:true,dist:1,hero:'Лео'},store.get('ps_settings')||{});
+const heroName=()=>String(settings.hero||'').trim()||'Лео';
 let seed=1337;
 function R(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}
 const pick=a=>a[Math.floor(R()*a.length)];
@@ -367,6 +369,114 @@ const bx0=i=>i===0?-297:ROADS[i-1]+7;
 const bx1=i=>i===5?297:ROADS[i]-7;
 const lampPos=[];
 let groveSign=null;
+function palm(x,z,s){
+  s=s||1;const h=6.2*s;
+  pushGeom(gCyl,mk(x,h/2,z,0.22*s,h,0.22*s,0),0x8a6a45,null);
+  for(let i=0;i<8;i++){
+    const a=i/8*PI2+0.3,dx=Math.sin(a),dz=Math.cos(a);
+    pushGeom(gBox,mk(x+dx*1.05*s,h+0.1*s,z+dz*1.05*s,0.45*s,0.1*s,2.3*s,a),i%2?0x2f8a3a:0x3b9b46,null);
+    pushGeom(gBox,mk(x+dx*2.0*s,h-0.45*s,z+dz*2.0*s,0.35*s,0.08*s,1.3*s,a),0x2a7a34,null);
+  }
+  pushGeom(gIco,mk(x,h-0.1*s,z,0.35*s,0.35*s,0.35*s,0),0x6b4a2b,null);
+  colBox(x,z,0.5,0.5,h);
+}
+function paintRoadText(text,x,z,w,d){
+  const c=document.createElement('canvas');c.width=512;c.height=128;
+  const g=c.getContext('2d');
+  g.fillStyle='rgba(240,240,240,0.92)';g.font='bold 92px "Arial Black",Arial,sans-serif';
+  g.textAlign='center';g.textBaseline='middle';g.fillText(text,256,68);
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false}));
+  m.position.set(x,0.12,z);scene.add(m);
+}
+/* ---------- круглая Гроув-стрит ---------- */
+const RING={cx:-50,cz:43,ri:11,ro:20};
+const SP={x:-27.3,z:43};
+const ringPos=(r,th)=>[RING.cx+Math.cos(th)*r,RING.cz+Math.sin(th)*r];
+const RH_PAL=[0x4fa85a,0x86c46f,0xdfeccf,0x3f8f4c,0xeef3e4,0xf0e2b0,0xd9a98c];
+function ringHouse(th,hero){
+  const R=29,W=8.4,D=7.6,H=5.0;
+  const cx=RING.cx+Math.cos(th)*R,cz=RING.cz+Math.sin(th)*R;
+  const ry=Math.atan2(-Math.cos(th),-Math.sin(th));
+  const c=Math.cos(ry),s=Math.sin(ry);
+  const L=(lx,lz)=>[cx+lx*c+lz*s,cz-lx*s+lz*c];
+  const part=(lx,lz,y,sx,sy,sz,col)=>{const p=L(lx,lz);pushGeom(gBox,mk(p[0],y,p[1],sx,sy,sz,ry),col,null);};
+  const wall=hero?0x2f9e5a:pick(RH_PAL),roof=pick([0x3b2f27,0x4b3b2f,0x5a5a5e,0x6b3a2e]);
+  part(0,0,H/2,W,H,D,wall);
+  const T=new THREE.Matrix4().makeTranslation(cx,H+1.5,cz)
+    .multiply(new THREE.Matrix4().makeRotationY(ry))
+    .multiply(new THREE.Matrix4().makeScale((W/2+0.6)/0.7071,3,(D/2+0.6)/0.7071))
+    .multiply(new THREE.Matrix4().makeRotationY(Math.PI/4));
+  pushGeom(gCone,T,roof,null);
+  part(0,D/2+0.06,1.15,1.2,2.3,0.14,hero?0xf2c230:0x5a3a22);
+  part(-2.6,D/2+0.06,2.4,1.5,1.2,0.14,0xbfdcea);part(2.6,D/2+0.06,2.4,1.5,1.2,0.14,0xbfdcea);
+  part(0,D/2+0.9,0.1,2.0,0.2,1.6,0xcfcac0);
+  part(-2.4,-1,H+1.1,0.9,2.2,0.9,0x8a4a38);
+  for(const lx of[-2.8,0,2.8])for(const lz of[-2.3,0,2.3]){const q=L(lx,lz);addCol(q[0]-1.5,q[0]+1.5,q[1]-1.5,q[1]+1.5,H+3);}
+  return{cx,cz,ry,L,part,D};
+}
+function buildRing(){
+  const ASPH=0x35383c,SWK=0xb9b6ae,gap=0.28;
+  const mkRing=(a,b,y,col,ts,tl)=>pushGeom(new THREE.RingGeometry(a,b,64,1,ts||0,tl||PI2).rotateX(-Math.PI/2),mk(RING.cx,y,RING.cz,1,1,1,0),col,null);
+  mkRing(RING.ri,RING.ro,0.1,ASPH);
+  // въезд с Гроув-стрит
+  pushGeom(gPlane,mk(-81.25,0.1,RING.cz,23.5,1,9,0),ASPH,null);
+  pushGeom(gPlane,mk(-91.5,0.25,RING.cz,3.6,1,9,0),ASPH,null);
+  // тротуар по кругу (с разрывом у въезда), бордюр острова, газон
+  mkRing(RING.ro,RING.ro+4.2,0.17,SWK,Math.PI+gap,PI2-2*gap);
+  mkRing(RING.ri-1,RING.ri,0.17,0xcfcac0);
+  pushGeom(new THREE.CircleGeometry(RING.ri-1,40).rotateX(-Math.PI/2),mk(RING.cx,0.18,RING.cz,1,1,1,0),0x4f9a45,null);
+  // разметка по центру кольца
+  for(let k=0;k<28;k++){
+    const th=k*PI2/28;if(Math.abs(th-Math.PI)<0.4)continue;
+    const p=ringPos(15.5,th);
+    pushGeom(gPlane,mk(p[0],0.115,p[1],2.2,1,0.25,-(th+Math.PI/2)),0xe9c93c,null);
+  }
+  // въездные стойки
+  for(const dz of[-5.7,5.7]){box(-72.6,0,RING.cz+dz,1.2,2.2,1.2,0xb5ada0);box(-72.6,2.2,RING.cz+dz,1.4,0.25,1.4,0x8a8478);colBox(-72.6,RING.cz+dz,1.2,1.2,2.5);}
+  // дома по кругу
+  const mbCols=[0x2874a6,0xc0392b,0xd4ac0d,0x1e8449];
+  let hero=null;
+  for(let k=1;k<=11;k++){
+    const th=Math.PI+k*PI2/12,isHero=k===6;
+    const h=ringHouse(th,isHero);if(isHero)hero=h;
+    const mp=ringPos(25.4,th-0.17);
+    box(mp[0],0,mp[1],0.08,1.0,0.08,0x555555);box(mp[0],1.0,mp[1],0.3,0.26,0.5,mbCols[k%4]);colBox(mp[0],mp[1],0.5,0.5,1.3);
+  }
+  for(let k=1;k<=10;k++){const th=Math.PI+(k+0.5)*PI2/12,p=ringPos(26.4,th);palm(p[0],p[1],0.9+(k%3)*0.1);}
+  // остров: большая пальма и четыре малых
+  palm(RING.cx,RING.cz,1.7);
+  for(let k=0;k<4;k++){const p=ringPos(6.2,k*Math.PI/2+0.4);palm(p[0],p[1],0.9);}
+  // скамейки на тротуаре
+  for(const th of[Math.PI/2,-Math.PI/2]){const p=ringPos(22.3,th);box(p[0],0,p[1],2.2,0.5,0.7,0x7a5a3a);}
+  // фонари кольца
+  for(let k=0;k<6;k++){const p=ringPos(RING.ro+3.6,Math.PI+(k+0.5)*PI2/6);lampPos.push([p[0],p[1]]);}
+  // дом Лео: табличка и баскетбольное кольцо
+  const pl=new THREE.Mesh(new THREE.PlaneGeometry(1.5,0.58),new THREE.MeshBasicMaterial({map:labelTex("SWEET HOME",256,100,'#123d22','#ffd44d','bold 34px Arial')}));
+  const pp=hero.L(0,hero.D/2+0.15);pl.position.set(pp[0],2.95,pp[1]);pl.rotation.y=hero.ry;scene.add(pl);
+  hero.part(7.2,5.2,1.85,0.14,3.7,0.14,0x666666);
+  hero.part(7.2,5.35,3.15,1.5,1.0,0.08,0xf2f2f2);
+  hero.part(7.2,5.55,2.85,0.6,0.05,0.05,0xe8731a);hero.part(7.2,6.15,2.85,0.6,0.05,0.05,0xe8731a);
+  hero.part(6.9,5.85,2.85,0.05,0.05,0.65,0xe8731a);hero.part(7.5,5.85,2.85,0.05,0.05,0.65,0xe8731a);
+  const hp=hero.L(7.2,5.2);colBox(hp[0],hp[1],0.4,0.4,3.7);
+}
+function buildGrove(){
+  const mbCols=[0x2874a6,0xc0392b,0xd4ac0d,0x1e8449];
+  let n=0;
+  for(let j=1;j<=4;j++)for(let k=0;k<5;k++,n++){
+    const cz=bx0(j)+11+16*k;
+    if(j!==3){ // восточная сторона (в блоке j=3 теперь круглая улица)
+      box(-88.9,0,cz-2.6,0.08,1.0,0.08,0x555555);box(-88.9,1.0,cz-2.6,0.3,0.26,0.5,mbCols[n%4]);colBox(-88.9,cz-2.6,0.4,0.5,1.3);
+      if(n%2===0)palm(-88.0,cz+5.3,0.9+(n%3)*0.08);
+      else{box(-88.7,0,cz+3.4,0.55,0.9,0.55,0x2f6b3a);box(-88.7,0.9,cz+3.4,0.6,0.08,0.6,0x244f2c);colBox(-88.7,cz+3.4,0.6,0.6,1);}
+    }
+    box(-111.1,0,cz-2.6,0.08,1.0,0.08,0x555555);box(-111.1,1.0,cz-2.6,0.3,0.26,0.5,mbCols[(n+2)%4]);colBox(-111.1,cz-2.6,0.4,0.5,1.3);
+    if(n%2===1)palm(-112.0,cz+5.3,0.9+(n%3)*0.08);
+    else{box(-111.3,0,cz+3.4,0.55,0.9,0.55,0x2f6b3a);box(-111.3,0.9,cz+3.4,0.6,0.08,0.6,0x244f2c);colBox(-111.3,cz+3.4,0.6,0.6,1);}
+  }
+  lampPos.push([-90.4,-20],[-109.6,-20],[-90.4,80],[-109.6,80]);
+  paintRoadText('GROVE ST',-100,60,11,2.75);
+  paintRoadText('GROVE ST',-100,-60,11,2.75);
+}
 function buildWorld(){
   const gnd=new THREE.Mesh(new THREE.PlaneGeometry(600,600).rotateX(-Math.PI/2),new THREE.MeshLambertMaterial({color:0x5b5d5e}));
   scene.add(gnd);
@@ -395,10 +505,11 @@ function buildWorld(){
     const x0=bx0(i),x1=bx1(i),z0=bx0(j),z1=bx1(j),cx=(x0+x1)/2,cz=(z0+z1)/2;
     let kind=i===0?'port':i===5?'ind':i<3?'res':i===3?'com':'down';
     if(i===3&&j===2)kind='park';
+    if(i===2&&j===3)kind='grove';
     const SW=0xb9b6ae;
     box(cx,0,z0+1.5,x1-x0,0.18,3,SW);box(cx,0,z1-1.5,x1-x0,0.18,3,SW);
     box(x0+1.5,0,cz,3,0.18,z1-z0-6,SW);box(x1-1.5,0,cz,3,0.18,z1-z0-6,SW);
-    const floor={res:0x5f9548,park:0x4f8c42,com:0x8d8d8a,down:0x8a8a88,port:0x7d7a73,ind:0x7d7a73}[kind];
+    const floor={res:0x5f9548,grove:0x5f9548,park:0x4f8c42,com:0x8d8d8a,down:0x8a8a88,port:0x7d7a73,ind:0x7d7a73}[kind];
     plane(cx,0.06,cz,x1-x0-6,z1-z0-6,floor);
     if(kind==='res'){
       for(const side of[-1,1]){
@@ -410,6 +521,8 @@ function buildWorld(){
         for(let k=0;k<4;k++)tree(side<0?x0+6:x1-6,z0+4+14+1+16*k,0.8+R()*0.4);
       }
       for(let k=0;k<7;k++)tree(Rr(x0+24,x1-24),Rr(z0+6,z1-6),0.9+R()*0.5);
+    }else if(kind==='grove'){
+      buildRing();
     }else if(kind==='com'||kind==='down'){
       const lw=(x1-x0-6)/2,lh=(z1-z0-6)/2;
       for(let a=0;a<2;a++)for(let b=0;b<2;b++){
@@ -449,6 +562,7 @@ function buildWorld(){
       }
     }
   }
+  buildGrove();
   // seawall
   box(0,0,-301.2,606,1.5,2.4,0x8f8f8f);box(0,0,301.2,606,1.5,2.4,0x8f8f8f);box(-301.2,0,0,2.4,1.5,606,0x8f8f8f);box(301.2,0,0,2.4,1.5,606,0x8f8f8f);
   addCol(-304,-300,-304,304,2);addCol(300,304,-304,304,2);addCol(-304,304,-304,-300,2);addCol(-304,304,300,304,2);
@@ -484,23 +598,59 @@ function buildWorld(){
 /* ---------- humans ---------- */
 function buildHuman(c){
   const g=new THREE.Group();
+  const skin=c.skin,hairC=c.hair,top=c.shirt,coatC=c.coat||0,shoes=c.shoes||0x1a1a1a,sleeve=c.sleeve||'long';
+  const add=(p,w,h,d,col,x,y,z)=>{const m=bx(w,h,d,col);m.position.set(x,y,z);p.add(m);return m;};
   const legL=new THREE.Group(),legR=new THREE.Group(),armL=new THREE.Group(),armR=new THREE.Group();
   legL.position.set(0.15,0.9,0);legR.position.set(-0.15,0.9,0);
-  let m=bx(0.22,0.9,0.26,c.pants);m.position.y=-0.45;legL.add(m);
-  m=bx(0.22,0.9,0.26,c.pants);m.position.y=-0.45;legR.add(m);
+  for(const L of[legL,legR]){add(L,0.22,0.84,0.26,c.pants,0,-0.42,0);add(L,0.24,0.14,0.38,shoes,0,-0.83,0.06);}
   armL.position.set(0.37,1.5,0);armR.position.set(-0.37,1.5,0);
-  m=bx(0.16,0.6,0.18,c.shirt);m.position.y=-0.3;armL.add(m);
-  m=bx(0.16,0.6,0.18,c.shirt);m.position.y=-0.3;armR.add(m);
-  m=bx(0.14,0.14,0.16,c.skin);m.position.y=-0.65;armL.add(m);
-  m=bx(0.14,0.14,0.16,c.skin);m.position.y=-0.65;armR.add(m);
-  const torso=bx(0.52,0.62,0.3,c.shirt);torso.position.y=1.21;
-  const head=bx(0.28,0.3,0.28,c.skin);head.position.y=1.67;
-  const hair=bx(0.3,0.12,0.3,c.hair);hair.position.y=1.82;
-  g.add(legL,legR,armL,armR,torso,head,hair);
+  for(const A of[armL,armR]){
+    if(sleeve==='short'){add(A,0.17,0.26,0.19,top,0,-0.13,0);add(A,0.14,0.32,0.16,skin,0,-0.42,0);}
+    else add(A,0.17,0.6,0.19,coatC||top,0,-0.3,0);
+    add(A,0.14,0.12,0.15,skin,0,-0.66,0);
+  }
+  add(g,0.52,0.62,0.3,top,0,1.21,0);
+  add(g,0.54,0.07,0.32,0x222222,0,0.93,0);
+  if(coatC){add(g,0.56,0.8,0.34,coatC,0,1.08,0);add(g,0.54,0.34,0.32,coatC,0,0.6,0);add(g,0.14,0.62,0.02,top,0,1.2,0.175);}
+  if(c.badge)add(g,0.07,0.08,0.02,0xf2c230,0.14,1.38,0.16);
+  if(c.chain)add(g,0.2,0.03,0.02,0xf2c230,0,1.46,0.155);
+  if(c.pack)add(g,0.4,0.5,0.18,c.pack,0,1.22,-0.24);
+  add(g,0.12,0.08,0.12,skin,0,1.55,0);
+  add(g,0.28,0.3,0.28,skin,0,1.7,0);
+  add(g,0.05,0.045,0.02,0xffffff,0.07,1.73,0.141);add(g,0.05,0.045,0.02,0xffffff,-0.07,1.73,0.141);
+  add(g,0.028,0.035,0.022,0x1a1a1a,0.07,1.73,0.15);add(g,0.028,0.035,0.022,0x1a1a1a,-0.07,1.73,0.15);
+  add(g,0.07,0.015,0.02,hairC,0.07,1.775,0.142);add(g,0.07,0.015,0.02,hairC,-0.07,1.775,0.142);
+  add(g,0.05,0.07,0.06,skin,0,1.68,0.16);
+  add(g,0.09,0.018,0.02,0x7a2f2f,0,1.62,0.142);
+  add(g,0.04,0.09,0.05,skin,0.16,1.69,0);add(g,0.04,0.09,0.05,skin,-0.16,1.69,0);
+  const st=c.style||'short',ac=c.accent||0xc0392b;
+  if(st==='short'){add(g,0.3,0.1,0.3,hairC,0,1.86,0);add(g,0.3,0.22,0.06,hairC,0,1.77,-0.12);add(g,0.03,0.12,0.2,hairC,0.15,1.8,-0.02);add(g,0.03,0.12,0.2,hairC,-0.15,1.8,-0.02);}
+  else if(st==='long'){add(g,0.3,0.1,0.3,hairC,0,1.86,0);add(g,0.3,0.46,0.07,hairC,0,1.62,-0.14);add(g,0.03,0.3,0.2,hairC,0.155,1.7,-0.02);add(g,0.03,0.3,0.2,hairC,-0.155,1.7,-0.02);}
+  else if(st==='cap'){add(g,0.3,0.12,0.3,ac,0,1.87,0);add(g,0.26,0.03,0.18,ac,0,1.82,0.2);add(g,0.3,0.14,0.06,hairC,0,1.76,-0.12);}
+  else if(st==='beanie'){add(g,0.32,0.17,0.32,ac,0,1.87,0);add(g,0.34,0.05,0.34,0x444444,0,1.79,0);}
+  else if(st==='mohawk'){add(g,0.06,0.16,0.3,hairC,0,1.9,0);}
+  if(c.beard)add(g,0.24,0.1,0.07,hairC,0,1.58,0.12);
+  if(c.stache)add(g,0.14,0.03,0.03,hairC,0,1.645,0.15);
+  if(c.glasses){
+    add(g,0.105,0.075,0.02,0x1d1d1d,0.07,1.73,0.153);add(g,0.105,0.075,0.02,0x1d1d1d,-0.07,1.73,0.153);
+    add(g,0.04,0.015,0.02,0x1d1d1d,0,1.745,0.153);
+    add(g,0.01,0.015,0.2,0x1d1d1d,0.145,1.74,0.05);add(g,0.01,0.015,0.2,0x1d1d1d,-0.145,1.74,0.05);
+  }
+  g.add(legL,legR,armL,armR);
   g.userData={legL,legR,armL,armR};
+  if(c.w||c.h)g.scale.set(c.w||1,c.h||1,c.w||1);
   g.traverse(o=>{if(o.isMesh)o.castShadow=true;});
   return g;
 }
+const LOOKS={
+  leo:{skin:0xc98b61,shirt:0xf2f2f2,pants:0x2a4a7c,hair:0x151515,style:'cap',accent:0x2f9e5a,shoes:0xf0f0f0,sleeve:'short',chain:true},
+  danny:{skin:0x8d5a3b,shirt:0x2e7d32,pants:0x3b3b3b,hair:0x111111,style:'beanie',accent:0x1f1f1f,shoes:0x7a2020,beard:true,w:1.05},
+  mara:{skin:0xf0c8a0,shirt:0x1b1b1b,pants:0x1b1b1b,hair:0xb05cff,style:'long',coat:0x4a2a7a,glasses:true,shoes:0x111111,h:0.96},
+  volkov:{skin:0xe8c4a0,shirt:0xdddddd,pants:0x111111,hair:0xdddddd,style:'short',coat:0x151515,glasses:true,shoes:0x0a0a0a,h:1.06,w:1.05},
+  roz:{skin:0xc08a6a,shirt:0x2a5b8a,pants:0x2a5b8a,hair:0x3b2a1a,style:'cap',accent:0xe8731a,shoes:0x5a3a22,sleeve:'short',w:1.03},
+  al:{skin:0xd9a98c,shirt:0xd35400,pants:0x8a7a5a,hair:0xcccccc,style:'bald',glasses:true,stache:true,shoes:0x6b4a2b,sleeve:'short',w:1.1,h:0.95},
+  ortega:{skin:0x9a6a48,shirt:0x2c3e66,pants:0x1f2a44,hair:0x151515,style:'cap',accent:0x1f2a44,badge:true,stache:true,shoes:0x111111,h:1.04,w:1.06}
+};
 function animHuman(g,ph,amp){
   const u=g.userData,s=Math.sin(ph)*amp;
   u.legL.rotation.x=s;u.legR.rotation.x=-s;u.armL.rotation.x=-s*0.9;u.armR.rotation.x=s*0.9;
@@ -510,27 +660,87 @@ function animHuman(g,ph,amp){
 const vehicles=[];
 const TYPES={
  sedan:{L:4.5,W:1.9,cabL:2.4,cabH:0.62,cabZ:-0.2,maxSpeed:33,accel:15},
- coupe:{L:4.3,W:1.95,cabL:2.0,cabH:0.55,cabZ:-0.3,maxSpeed:38,accel:19},
- suv:{L:4.7,W:2.05,cabL:2.9,cabH:0.8,cabZ:-0.3,maxSpeed:29,accel:13},
- van:{L:5.2,W:2.0,cabL:3.9,cabH:0.95,cabZ:0.1,maxSpeed:26,accel:11}
+ coupe:{L:4.3,W:1.95,cabL:1.9,cabH:0.52,cabZ:-0.35,maxSpeed:38,accel:19,wing:true},
+ muscle:{L:4.8,W:2.05,cabL:1.8,cabH:0.5,cabZ:-0.55,maxSpeed:41,accel:22,wing:true,stripes:true},
+ suv:{L:4.7,W:2.05,cabL:3.0,cabH:0.82,cabZ:-0.3,maxSpeed:29,accel:13,rack:true},
+ van:{L:5.2,W:2.0,cabL:3.9,cabH:0.95,cabZ:0.1,maxSpeed:26,accel:11,box:true},
+ pickup:{L:5.0,W:2.0,cabL:1.7,cabH:0.62,cabZ:0.6,maxSpeed:30,accel:14,bed:true},
+ taxi:{L:4.5,W:1.9,cabL:2.4,cabH:0.62,cabZ:-0.2,maxSpeed:33,accel:15,sign:true},
+ police:{L:4.6,W:1.95,cabL:2.4,cabH:0.62,cabZ:-0.2,maxSpeed:37,accel:19,cop:true}
 };
+const TRAFFIC_TYPES=['sedan','coupe','suv','van','pickup','taxi','muscle'];
 const CARCOLORS=[0xc0392b,0x2c6fbb,0xe8e8e8,0x1f1f1f,0xe6c229,0x2e8b57,0x8e44ad,0x9aa4ad,0xd35400];
 function buildCar(color,type){
   const T=TYPES[type],g=new THREE.Group(),bodies=[],wheels=[];
-  let m=bx(T.W,0.62,T.L,color);m.position.set(0,0.66,0);g.add(m);bodies.push(m);
-  m=bx(T.W-0.18,T.cabH,T.cabL,0x1c2833);m.position.set(0,0.97+T.cabH/2,T.cabZ);g.add(m);
-  m=bx(T.W-0.22,0.08,T.cabL-0.12,color);m.position.set(0,0.97+T.cabH+0.04,T.cabZ);g.add(m);bodies.push(m);
-  m=bx(T.W+0.06,0.22,0.16,0x2a2a2a);m.position.set(0,0.5,T.L/2);g.add(m);
-  m=bx(T.W+0.06,0.22,0.16,0x2a2a2a);m.position.set(0,0.5,-T.L/2);g.add(m);
+  const L=T.L,W=T.W,GL=0x24323f;
+  const put=(m,x,y,z,rx)=>{m.position.set(x,y,z);if(rx)m.rotation.x=rx;g.add(m);return m;};
+  const paint=(w,h,d,x,y,z,rx)=>{const m=put(bx(w,h,d,color),x,y,z,rx);bodies.push(m);return m;};
+  const dark=(w,h,d,x,y,z,c)=>put(bx(w,h,d,c||0x1a1a1a),x,y,z);
+  const glow=(w,h,d,x,y,z,c)=>put(bxB(w,h,d,c),x,y,z);
+  dark(W-0.1,0.2,L-0.4,0,0.38,0);
+  paint(W,0.5,L,0,0.65,0);
+  let cZ=T.cabZ,cH=T.cabH,cLc=Math.max(0.5,T.cabL-0.9),roofY;
+  if(T.box){
+    paint(W-0.04,1.65,L*0.6,0,1.72,-L*0.19);
+    paint(W-0.06,0.5,1.5,0,1.17,L*0.28);
+    put(bx(W-0.2,0.5,1.3,GL),0,1.62,L*0.28);
+    put(bx(W-0.26,0.05,0.9,GL),0,1.62,L*0.28+0.95,Math.atan2(0.5,0.4));
+    paint(W-0.26,0.06,1.2,0,1.9,L*0.26);
+    paint(W-0.12,0.1,0.7,0,1.0,L*0.43,0.08);
+    for(const s of[-1,1])dark(0.03,1.3,0.03,s*W/2,1.45,-0.2);
+    roofY=2.55;cZ=0;
+  }else{
+    if(!T.bed)paint(W-0.12,0.1,L*0.2,0,0.96,-L*0.4,-0.05);
+    paint(W-0.12,0.1,L*0.27,0,0.95,L*0.32,0.08);
+    put(bx(W-0.2,cH,cLc,GL),0,0.95+cH/2,cZ);
+    const run=0.45,len=Math.hypot(run,cH),ang=Math.atan2(cH,run);
+    put(bx(W-0.26,0.05,len,GL),0,0.95+cH/2,cZ+cLc/2+run/2,ang);
+    put(bx(W-0.26,0.05,len,GL),0,0.95+cH/2,cZ-cLc/2-run/2,-ang);
+    roofY=0.95+cH+0.04;
+    paint(W-0.26,0.07,cLc,0,roofY,cZ);
+    for(const s of[-1,1]){
+      paint(0.08,cH,0.08,s*(W/2-0.12),0.95+cH/2,cZ+cLc/2);paint(0.08,cH,0.08,s*(W/2-0.12),0.95+cH/2,cZ-cLc/2);
+      paint(0.08,cH,0.1,s*(W/2-0.12),0.95+cH/2,cZ);
+      paint(0.16,0.1,0.1,s*(W/2+0.1),0.98,cZ+cLc/2+0.15);
+      put(bx(0.04,0.05,0.22,0xb8bcc2),s*(W/2+0.01),0.78,cZ+0.4);
+      if(!T.wing)put(bx(0.04,0.05,0.22,0xb8bcc2),s*(W/2+0.01),0.78,cZ-0.55);
+    }
+  }
   for(const s of[-1,1]){
-    m=bxB(0.38,0.16,0.06,0xfff3b0);m.position.set(s*0.62,0.78,T.L/2+0.02);g.add(m);
-    m=bxB(0.38,0.16,0.06,0xff2a2a);m.position.set(s*0.62,0.78,-T.L/2-0.02);g.add(m);
+    dark(0.04,0.1,L*0.35,s*(W/2+0.01),0.42,0);
+    dark(0.03,0.5,0.03,s*W/2,0.65,T.box?0.9:cZ+cLc/2);
+    glow(0.42,0.15,0.06,s*(W/2-0.38),0.78,L/2+0.02,0xfff3b0);
+    glow(0.12,0.08,0.05,s*(W/2-0.55),0.5,L/2+0.02,0xfff3b0);
+    glow(0.42,0.15,0.06,s*(W/2-0.38),0.8,-L/2-0.02,0xff2a2a);
+  }
+  dark(W*0.55,0.16,0.04,0,0.66,L/2+0.01);
+  put(bx(W*0.55,0.03,0.045,0xc9ccd1),0,0.76,L/2+0.015);
+  dark(W+0.06,0.2,0.16,0,0.45,L/2);dark(W+0.06,0.2,0.16,0,0.45,-L/2);
+  put(bx(0.5,0.14,0.02,0xf2f2f2),0,0.5,L/2+0.09);put(bx(0.5,0.14,0.02,0xf2f2f2),0,0.52,-L/2-0.09);
+  dark(0.08,0.08,0.3,0.5,0.3,-L/2-0.1,0x777777);
+  if(T.wing){dark(0.06,0.25,0.06,W/2-0.3,1.15,-L/2+0.3);dark(0.06,0.25,0.06,-W/2+0.3,1.15,-L/2+0.3);paint(W-0.3,0.05,0.45,0,1.3,-L/2+0.2);}
+  if(T.stripes)for(const s of[-1,1]){put(bx(0.22,0.015,L*0.27,0x111111),s*0.22,1.01,L*0.32,0.08);put(bx(0.22,0.015,L*0.2,0x111111),s*0.22,1.02,-L*0.4,-0.05);}
+  if(T.rack){
+    for(const s of[-1,1])dark(0.04,0.04,cLc,s*0.7,roofY+0.1,cZ);
+    dark(W-0.5,0.04,0.05,0,roofY+0.1,cZ+0.5);dark(W-0.5,0.04,0.05,0,roofY+0.1,cZ-0.5);
+    const sp=new THREE.Mesh(gCyl,mat(0x151515));sp.scale.set(0.35,0.12,0.35);sp.rotation.x=Math.PI/2;put(sp,0,0.95,-L/2-0.14);
+  }
+  if(T.bed){
+    paint(W-0.1,0.08,2.0,0,0.9,-1.4);dark(W-0.3,0.02,1.8,0,0.95,-1.4);
+    for(const s of[-1,1])paint(0.08,0.45,2.0,s*(W/2-0.1),1.12,-1.4);
+    paint(W-0.1,0.45,0.08,0,1.12,-2.38);paint(W-0.1,0.45,0.08,0,1.12,-0.4);
+  }
+  if(T.sign){put(bx(0.55,0.17,0.28,0xf2f2f2),0,roofY+0.12,cZ);put(bx(0.56,0.04,0.29,0x111111),0,roofY+0.04,cZ);}
+  if(T.cop){
+    put(bx(1.0,0.1,0.3,0x222222),0,roofY+0.1,cZ);glow(0.4,0.1,0.28,-0.3,roofY+0.17,cZ,0xff2a2a);glow(0.4,0.1,0.28,0.3,roofY+0.17,cZ,0x2a5aff);
+    for(const s of[-1,1])put(bx(0.025,0.4,1.2,0xf2f2f2),s*(W/2+0.005),0.66,cZ-0.1);
   }
   for(const fz of[1,-1])for(const sx of[-1,1]){
     const sg=new THREE.Group(),sp=new THREE.Group();
     const w=new THREE.Mesh(gCyl,mat(0x151515));w.scale.set(0.38,0.28,0.38);w.rotation.z=Math.PI/2;sp.add(w);
-    sp.add(bx(0.32,0.5,0.08,0x9a9a9a));
-    sg.add(sp);sg.position.set(sx*(T.W/2-0.12),0.38,fz*T.L*0.32);g.add(sg);
+    const rim=new THREE.Mesh(gCyl,mat(0xc9ccd1));rim.scale.set(0.25,0.3,0.25);rim.rotation.z=Math.PI/2;sp.add(rim);
+    sp.add(bx(0.31,0.46,0.05,0xdfe2e6));sp.add(bx(0.31,0.05,0.46,0xdfe2e6));
+    sg.add(sp);sg.position.set(sx*(W/2-0.12),0.38,fz*L*0.32);g.add(sg);
     wheels.push({sg,sp,front:fz>0});
   }
   g.traverse(o=>{if(o.isMesh)o.castShadow=true;});
@@ -577,10 +787,10 @@ function inCol(x,y,z){
 let state='splash',gameTime=17.6,money=0,controlLock=false,dead=false,deadT=0;
 const keys={};
 let locked=false,mouseDown=false;
-const P={x:-91.6,z:24,y:0,vy:0,vx:0,vz:0,kx:0,kz:0,heading:Math.PI,hp:100,hurtT:99,phase:0,amp:0,inVeh:null,group:null};
-let camYaw=Math.PI,camPitch=0.32,camMouseT=99,mAng=0;
-const MS={state:'idle',timer:0,done:false,wait:0};
-const MI={start:{x:-90.6,z:14},car:{x:-105.4,z:16,h:0},dest:{x:200,z:150},limit:180};
+const P={x:SP.x,z:SP.z,y:0,vy:0,vx:0,vz:0,kx:0,kz:0,heading:-Math.PI/2,hp:100,hurtT:99,phase:0,amp:0,inVeh:null,group:null};
+let camYaw=-Math.PI/2,camPitch=0.32,camMouseT=99,mAng=0;
+const MS={state:'idle',timer:0,done:false,wait:0,n:0,si:0,sd:null,rt:null,spawned:[],actor:null,markCar:null,car:null,hud:'',left:0};
+const MI={start:(()=>{const p=ringPos(22.7,0.2);return{x:p[0],z:p[1]};})(),car:(()=>{const p=ringPos(17.5,-0.5);return{x:p[0],z:p[1],h:0.5};})(),dest:{x:200,z:150},limit:180};
 let danny=null,dannyMarker=null,carMarker=null,destRing=null,missionCar=null;
 const peds=[];
 
@@ -594,6 +804,7 @@ function hurtPlayer(n){
 /* ---------- vehicle physics ---------- */
 const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
 function aiChoose(a){
+  if(a.route&&!a.pursue&&a.ix===a.route[0]&&a.iz===a.route[1]){a.stop=true;return;}
   const opts=[];
   for(const d of DIRS){
     if(d[0]===-a.dx&&d[1]===-a.dz)continue;
@@ -602,7 +813,8 @@ function aiChoose(a){
     opts.push(d);
   }
   let d;
-  if(!opts.length)d=[-a.dx,-a.dz];
+  if(a.route&&opts.length){let bm=1e9;for(const o of opts){const m=Math.abs(a.ix+o[0]-a.route[0])+Math.abs(a.iz+o[1]-a.route[1])+Math.random()*0.1;if(m<bm){bm=m;d=o;}}}
+  else if(!opts.length)d=[-a.dx,-a.dz];
   else{const st=opts.find(o=>o[0]===a.dx&&o[1]===a.dz);d=(st&&Math.random()<0.55)?st:opts[Math.floor(Math.random()*opts.length)];}
   a.dx=d[0];a.dz=d[1];a.ix+=d[0];a.iz+=d[1];
 }
@@ -611,12 +823,14 @@ function aiUpdate(v,dt){
   if(v.wrecked){v.speed*=Math.exp(-2*dt);return;}
   if(a.stun>0){a.stun-=dt;v.speed=lerp(v.speed,0,1-Math.exp(-4*dt));return;}
   const nx=ROADS[a.ix],nz=ROADS[a.iz];
-  if(Math.hypot(nx-v.x,nz-v.z)<11)aiChoose(a);
+  if(a.hold){v.speed=lerp(v.speed,0,1-Math.exp(-6*dt));return;}
+  if(!a.stop&&Math.hypot(nx-v.x,nz-v.z)<11)aiChoose(a);
+  if(a.stop){v.speed=lerp(v.speed,0,1-Math.exp(-3*dt));return;}
   const tx=ROADS[a.ix]+(-a.dz)*3.0,tz=ROADS[a.iz]+a.dx*3.0;
   const diff=angDiff(v.h,Math.atan2(tx-v.x,tz-v.z));
   const turn=clamp(diff*2.5,-1.8,1.8);
   v.h+=turn*dt;v.steer=clamp(turn*0.25,-0.5,0.5);
-  let ts=Math.abs(diff)>0.45?6:13;
+  let ts=(Math.abs(diff)>0.45?6:13)*(a.spd||1);
   const fx=Math.sin(v.h),fz=Math.cos(v.h);
   let block=false;
   if(a.ghost>0)a.ghost-=dt;
@@ -633,7 +847,7 @@ function aiUpdate(v,dt){
     if(Math.abs(-ox*fz+oz*fx)<1.6){block=true;break;}
   }
   if(block){ts=0;a.blockT+=dt;if(a.blockT>6){a.ghost=3;a.blockT=0;}}else a.blockT=0;
-  v.speed+=clamp(ts-v.speed,-16*dt,4.5*dt);
+  v.speed+=clamp(ts-v.speed,-16*dt,4.5*dt*(a.spd||1));
 }
 function onVehHit(v,nx,nz,fx,fz){
   const vx=fx*v.speed+v.kx,vz=fz*v.speed+v.kz,vn=vx*nx+vz*nz;
@@ -739,7 +953,11 @@ function updPuffs(dt){
 
 /* ---------- peds ---------- */
 function randPedColors(){
-  return{skin:pick([0xc98b61,0x8d5a3b,0xf0c8a0,0x6b4429]),shirt:pick([0xc0392b,0x2874a6,0xd4ac0d,0x17a589,0x884ea0,0x7f8c8d,0xe8e8e8]),pants:pick([0x2c3e50,0x34495e,0x5d4037,0x1b1b1b,0x4a6fa5]),hair:pick([0x111111,0x3b2a1a,0x7a5a2a,0xaaaaaa])};
+  const col=pick([0xc0392b,0x2874a6,0xd4ac0d,0x17a589,0x884ea0,0x7f8c8d,0xe8e8e8,0xe67e22]);
+  return{skin:pick([0xc98b61,0x8d5a3b,0xf0c8a0,0x6b4429]),shirt:col,pants:pick([0x2c3e50,0x34495e,0x5d4037,0x1b1b1b,0x4a6fa5]),hair:pick([0x111111,0x3b2a1a,0x7a5a2a,0xaaaaaa]),
+    style:pick(['short','short','long','cap','beanie','bald','mohawk']),accent:pick([0xc0392b,0x2874a6,0x222222,0x2e7d32]),
+    glasses:R()<0.2,beard:R()<0.18,sleeve:R()<0.4?'short':'long',coat:R()<0.12?pick([0x333333,0x5d4037,0x2c3e50]):0,
+    shoes:pick([0x1a1a1a,0xeeeeee,0x5a3a22]),w:0.92+R()*0.2,h:0.94+R()*0.14,pack:R()<0.15?pick([0x1f6f4a,0x8a2a2a,0x333333]):0};
 }
 function placePed(p){
   let vert,road,side;
@@ -782,7 +1000,9 @@ function updPeds(dt){
 function subtitle(who,text){
   const el=$('sub');
   if(!who&&!text){el.innerHTML='';return;}
-  el.innerHTML=who?'<span class="'+(who==='Лео'?'wl':'who')+'">'+who+':</span> '+text:text;
+  const hn=heroName().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const t=String(text||'').replace(/Лео/g,hn);
+  el.innerHTML=who?'<span class="'+(who==='Лео'?'wl':who==='Мара'?'mr':'who')+'">'+(who==='Лео'?hn:who)+':</span> '+t:t;
 }
 let seq=null;
 function playSeq(lines,done){seq={lines,i:0,t:0,done};showLine();}
@@ -796,7 +1016,7 @@ function updateSeq(dt){
     else showLine();
   }
 }
-function setObjective(html){const o=$('obj');if(!html){o.classList.add('hidden');return;}o.classList.remove('hidden');o.innerHTML=html;}
+function setObjective(html){const o=$('obj');if(!html){o.classList.add('hidden');o._h='';return;}if(o._h!==html){o._h=html;o.innerHTML=html;}o.classList.remove('hidden');}
 function bigMsg(t,s,cls){
   const b=$('big');$('bigT').textContent=t;$('bigS').textContent=s||'';
   b.className='';void b.offsetWidth;b.className='show '+cls;
@@ -804,65 +1024,359 @@ function bigMsg(t,s,cls){
 function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>{e.style.opacity=0;},2200);}
 const fmtT=s=>{s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 
-function resetMissionWorld(){
-  MS.state=MS.done?'done':'idle';MS.timer=0;MS.wait=0;
-  if(P.inVeh===missionCar)exitVehicle(true);
-  const c=missionCar;
-  c.x=MI.car.x;c.z=MI.car.z;c.h=MI.car.h;c.speed=0;c.kx=c.kz=0;c.hp=100;c.driver=null;c.ai=null;c.sleep=false;
-  if(c.wrecked){c.wrecked=false;c.bodies.forEach(b=>{b.material=mat(0xe8731a);});}
-  dannyMarker.visible=!MS.done;carMarker.visible=false;destRing.visible=false;
-  $('mtimer').classList.add('hidden');
-  setObjective(MS.done?'Свободная игра. Катайтесь по Пасифик-Сити!':'Поговорите с <b>Дэнни</b>');
+const CPS=[[1,3],[2,3],[3,3],[4,2],[3,1],[2,1],[1,1],[1,2]].map(([i,j])=>[ROADS[i],ROADS[j]]);
+const RINGW=ringPos(15.5,Math.PI),MARA_AT=ringPos(22.7,-0.3);
+const MIS=[
+ {name:'Тачка для покупателя',car:0xe8731a,reward:500,bonus:2,
+  dlg:[
+   ['Дэнни','Лео! Как раз тебя искал. Есть дело, которое нельзя откладывать.',3.8],
+   ['Лео','Опять что-то незаконное?',2.4],
+   ['Дэнни','Всё чисто, обещаю. Видишь оранжевый седан у кольца? Его надо отогнать в автосалон «Pacific Autos» на востоке.',5.4],
+   ['Дэнни','Покупатель ждёт. Три минуты, и без единой царапины — он очень придирчивый.',4.4],
+   ['Лео','Понял. Считай, уже еду.',2.6]],
+  stages:[
+   {t:'car',label:'СЕДАН',obj:'Сядьте в <b>оранжевый седан</b>'},
+   {t:'visit',pts:[[200,150]],r:8,veh:'need',stop:true,timer:180,obj:'Отгоните седан в автосалон <b>Pacific Autos</b> и остановитесь в отмеченной зоне'}],
+  outro:[['Дэнни','Отличная работа, Лео! Зайди ко мне чуть позже — Мара нашла кое-что интересное.',5]]},
+ {name:'Хвост',car:0x2c6fbb,reward:800,
+  dlg:[
+   ['Дэнни','Лео, у нас проблема. Кто-то сливает наши заказы, и Мара выяснила — это Волков.',4.8],
+   ['Лео','Тот самый, на чёрном купе?',2.6],
+   ['Дэнни','Он. Прямо сейчас выезжает на Гроув-стрит. Проследи, куда он едет.',4.2],
+   ['Дэнни','Держись на расстоянии: сядешь на хвост слишком близко — заметит. Отстанешь — потеряешь.',5.2],
+   ['Лео','Не ближе, чем нужно, и не дальше, чем видно. Поехали.',3.4]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'tail',spawn:{type:'coupe',color:0x161616,x:-103,z:43,ix:1,iz:3,dx:0,dz:1,route:[4,4]},obj:'Следуйте за <b>чёрным купе</b>. Держите дистанцию'}],
+  outro:[['Лео','Склад в Ист-Индастриале. Вот где ты прячешься, Волков.',3.6],['Дэнни','Хвост чистый. Возвращайся на Гроув-стрит — у меня есть ещё одна идея.',4.6]]},
+ {name:'Ночной заезд',car:0xc0392b,reward:1000,bonus:3,time:22,
+  dlg:[
+   ['Дэнни','Волков сегодня ночью проверяет свои точки. Мара достала маршрут — у нас один шанс.',4.8],
+   ['Лео','Что от меня нужно?',2.2],
+   ['Дэнни','Объехать все отмеченные перекрёстки по кругу, пока он не сменил расписание. Две минуты с небольшим.',5.2],
+   ['Лео','Ночью, на время. Мне нравится.',2.8],
+   ['Мара','Лео, это Мара. Первая точка недалеко от Гроув-стрит, дальше по кругу. Время пошло!',4.8]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'visit',pts:CPS,r:9,veh:'need',timer:140,obj:'Проезжайте через <b>отмеченные точки</b> до конца круга'}],
+  outro:[['Мара','Все точки отмечены, жучки на месте, Лео.',3.6],['Дэнни','Ты легенда этой улицы. Но у меня для тебя новая работа — в порту.',5]]},
+ {name:'Фургон Роз',car:0x2e8b57,reward:1200,bonus:2,
+  dlg:[
+   ['Дэнни','Лео, нужны колёса посерьёзнее. Роз в порту держит фургон — ничей и очень быстрый.',4.8],
+   ['Лео','И что с ним делать?',2.2],
+   ['Дэнни','Отвези его Элу в ломбард в Даунтауне. Только аккуратно: помятый фургон Эл не возьмёт.',5],
+   ['Лео','Понял. Еду в порт.',2.4]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b> и поезжайте в порт к <b>Роз</b>'},
+   {t:'visit',pts:[[-190,50]],r:14,obj:'Поезжайте в порт к <b>Роз</b> (западный край города)'},
+   {t:'talk',who:'roz',name:'РОЗ',at:[-191.5,52],face:-Math.PI/2,lines:[['Роз','Лео? Фургон у обочины, ключи внутри. Старый, но летает.',4],['Роз','Только не разбей: Эл платит за состояние.',3.6],['Лео','Постараюсь.',2]]},
+   {t:'car',label:'ФУРГОН',spawn:{type:'van',color:0xe8e8e8,x:-203,z:62,h:0},obj:'Сядьте в <b>фургон</b>'},
+   {t:'visit',pts:[[108.5,-100]],r:12,veh:'need',stop:true,keepHp:55,timer:170,obj:'Отвезите фургон Элу в Даунтаун и остановитесь у ломбарда'},
+   {t:'talk',who:'al',name:'ЭЛ',at:[111,-100],face:-Math.PI/2,lines:[['Эл','О, свежий фургон! Давно такого не видел. Деньги — на стойке.',4],['Лео','Приятно иметь дело.',2.4]]}],
+  outro:[['Дэнни','Эл доволен, Роз тоже. Но Волков что-то заподозрил — держись начеку.',4.8]]},
+ {name:'Долг',car:0x8e44ad,reward:900,bonus:3,
+  dlg:[
+   ['Дэнни','Волков должен нам денег. Его люди бросили сумки в парке, когда увидели полицию.',5],
+   ['Дэнни','Собери всё до того, как их подберут другие. Пешком, чтобы не светиться.',4.6],
+   ['Лео','Деньги сами в руки не придут. Иду.',3]],
+  stages:[
+   {t:'visit',pts:[[50,-90]],r:10,timer:100,obj:'Доберитесь до парка в Центре (машина — по желанию)'},
+   {t:'visit',pts:[[50,-85],[50,-68],[78,-50],[50,-15],[22,-50]],r:3.5,dwell:0.4,veh:'foot',timer:110,obj:'Соберите <b>сумки с деньгами</b> пешком'}],
+  outro:[['Дэнни','Всё до цента! Волков сам себя выдал. Мара говорит, он собирается удрать из города.',5.2]]},
+ {name:'Погоня за Волковым',car:0xd68910,reward:1500,time:18.7,
+  dlg:[
+   ['Мара','Лео, это Мара. Волков только что сел в чёрный мускул-кар. Он едет сдавать нас Ортеге.',5],
+   ['Дэнни','Догони и разбей его машину, пока он не добрался до полиции.',4.4],
+   ['Лео','Он быстрый. Но я быстрее.',2.8]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'chase',spawn:{type:'muscle',color:0x161616,x:-103,z:43,ix:1,iz:3,dx:0,dz:1,spd:1.7,hp:70},timer:160,obj:'Догоните <b>Волкова</b> и разбейте его машину'}],
+  outro:[['Лео','Машина в хлам. Волков сбежал пешком, но он выдал себя.',4.2],['Дэнни','Плохие новости: Ортега уже в курсе. Готовь машину.',4.4]]},
+ {name:'Сирены',car:0x1f6f4a,reward:1300,
+  dlg:[
+   ['Дэнни','Лео, полиция Ортеги на всех перекрёстках. Уходи в порт, к Роз — у неё есть гараж.',5],
+   ['Мара','Я отключаю камеры, но на это нужно время. Не дай себя поймать.',4.4],
+   ['Лео','Только не останавливайтесь на красных.',3]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'visit',pts:[[-190,50]],r:12,veh:'need',stop:true,pursuers:{n:2,spd:1.5},timer:130,obj:'Оторвитесь от полиции и спрячьтесь в гараже Роз (порт)'},
+   {t:'talk',who:'roz',name:'РОЗ',at:[-191.5,52],face:-Math.PI/2,lines:[['Роз','Сюда! Закрывай ворота. Ты цел?',3.2],['Лео','Цел. Ортега не отстаёт.',3],['Роз','Тогда у нас одна ночь. Мара нашла, где Волков хранит записи.',4.6]]}],
+  outro:[['Мара','Склад на востоке. Там записи, которые посадят Ортегу.',4.4]]},
+ {name:'Жучки на складе',car:0xb03a2e,reward:1400,time:23.5,
+  dlg:[
+   ['Мара','Лео, на складе Волкова три узла связи. Поставь жучки на каждый — и вся его сеть как на ладони.',5.2],
+   ['Лео','Сигнализации, охрана?',2.4],
+   ['Мара','Охрана на другом конце. Тихо и быстро.',3.6]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'visit',pts:[[208.5,-170]],r:14,veh:'need',timer:110,obj:'Поезжайте на восток, к складу Волкова (Ист-Индастриал)'},
+   {t:'visit',pts:[[208.5,-125],[208.5,-75],[208.5,-25]],r:4,dwell:2.5,veh:'foot',timer:120,obj:'Установите жучки на <b>узлы связи</b>: стойте у отмеченных точек'}],
+  outro:[['Мара','Есть сигнал! Волков перевозит груз ночью в порт — рассвет всё решит.',5]]},
+ {name:'Груз',car:0x2c3e66,reward:1600,time:0.5,
+  dlg:[
+   ['Мара','Лео, груз Волкова выезжает со склада! Если он дойдёт до порта — улики пропадут.',5],
+   ['Дэнни','Догони фургон и разбей его. Любой ценой.',3.6],
+   ['Лео','Принято.',2]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'chase',now:true,failOnArrive:true,spawn:{type:'van',color:0xe8e8e8,x:197,z:-100,ix:4,iz:2,dx:0,dz:1,route:[0,3],spd:1.0,hp:110},timer:150,obj:'Остановите <b>фургон с грузом</b> — разбейте его до порта'}],
+  outro:[['Лео','Груз горит. Улики теперь только у Мары.',3.6],['Дэнни','Ортега идёт на последний ход. Рассвет — и всё закончится на Гроув-стрит.',5.2]]},
+ {name:'Последняя ночь',car:0x5d6d7e,reward:3000,time:5.4,
+  dlg:[
+   ['Дэнни','Лео, это финал. Ортега ведёт всю полицию на Гроув-стрит.',4.6],
+   ['Мара','Мне нужно, чтобы ты дотянул их до кольца, пока я отправляю улики в прессу.',5],
+   ['Лео','Привезу их прямо домой.',3]],
+  stages:[
+   {t:'car',any:true,obj:'Сядьте в <b>любую машину</b>'},
+   {t:'visit',pts:[RINGW],r:10,veh:'need',stop:true,pursuers:{n:3,spd:1.7},timer:150,obj:'Приведите полицию на Гроув-стрит и остановитесь на кольце'},
+   {t:'talk',who:'mara',name:'МАРА',at:MARA_AT,face:Math.PI,lines:[['Мара','Готово! Улики ушли в эфир — Ортегу уже арестовывают.',4.4],['Дэнни','Лео, ты вернул улице покой. Только Волков где-то ещё…',4.6],['Лео','Значит, это не конец.',3]]}],
+  outro:[['Дэнни','Гроув-стрит снова наша. Но Волков ещё вернётся.',4.4]]}
+];
+const NMIS=10;
+const nearNode=(x,z)=>[clamp(Math.round((x+200)/100),0,4),clamp(Math.round((z+200)/100),0,4)];
+const pPos=()=>{const v=P.inVeh;return v?{x:v.x,z:v.z}:{x:P.x,z:P.z};};
+let mTargets=[];
+function missionActive(){return MS.state==='active';}
+function idleObjective(){return MS.done?'Свободная игра. Катайтесь по Пасифик-Сити!':'Поговорите с <b>Дэнни</b>';}
+function removeVehicle(v){
+  if(P.inVeh===v)exitVehicle(true);
+  const i=vehicles.indexOf(v);if(i>=0)vehicles.splice(i,1);
+  scene.remove(v.mesh);
 }
-function startMission(){
-  MS.state='dialog';controlLock=true;dannyMarker.visible=false;
-  P.heading=Math.atan2(MI.start.x-P.x,MI.start.z-P.z);
-  playSeq([
-    ['Дэнни','Лео! Как раз тебя искал. Есть дело, которое нельзя откладывать.',3.8],
-    ['Лео','Опять что-то незаконное?',2.4],
-    ['Дэнни','Всё чисто, обещаю. Видишь оранжевый седан через дорогу? Его надо отогнать в автосалон «Pacific Autos» на востоке.',5.4],
-    ['Дэнни','Покупатель ждёт. Три минуты, и без единой царапины — он очень придирчивый.',4.4],
-    ['Лео','Понял. Считай, уже еду.',2.6]
-  ],()=>{
-    controlLock=false;MS.state='toCar';carMarker.visible=true;
-    setObjective('Сядьте в <b>оранжевый седан</b>');
-  });
+function dropVeh(v){
+  if(!v||P.inVeh===v)return;
+  removeVehicle(v);MS.spawned=MS.spawned.filter(x=>x!==v);
 }
-function failMission(reason){
-  if(MS.state==='failed'||MS.state==='done'||MS.state==='idle')return;
-  MS.state='failed';MS.wait=4.5;
-  bigMsg('МИССИЯ ПРОВАЛЕНА',reason,'fail');jingle(false);
-  $('mtimer').classList.add('hidden');setObjective('');carMarker.visible=false;destRing.visible=false;
+function spawnActor(look,x,z,ry){
+  const g=buildHuman(LOOKS[look]);g.position.set(x,0,z);g.rotation.y=ry||0;scene.add(g);return g;
 }
-function winMission(){
-  const bonus=Math.floor(Math.max(0,MS.timer))*2,reward=500+bonus;
-  money+=reward;MS.state='done';MS.done=true;
-  bigMsg('МИССИЯ ВЫПОЛНЕНА!','+ $'+reward+' (бонус за время: $'+bonus+')','pass');jingle(true);
-  $('mtimer').classList.add('hidden');destRing.visible=false;carMarker.visible=false;
-  setObjective('Свободная игра. Катайтесь по Пасифик-Сити!');
-  setTimeout(()=>{if(state==='playing')subtitle('Дэнни','Отличная работа, Лео! Деньги уже у тебя. Заглядывай на Гроув-стрит — дела найдутся.');setTimeout(()=>subtitle(),5000);},2500);
-  saveGame(true);
+function spawnAI(s){
+  let x=s.x,z=s.z;
+  for(let g=0;g<8;g++){if(!vehicles.some(v=>Math.hypot(v.x-x,v.z-z)<7))break;x+=s.dx*9;z+=s.dz*9;}
+  const v=addVehicle(x,z,Math.atan2(s.dx,s.dz),s.color,s.type,{ix:s.ix,iz:s.iz,dx:s.dx,dz:s.dz,stun:0,blockT:0,ghost:0,route:s.route||null,hold:!!s.hold,stop:false,spd:s.spd||1,pursue:!!s.pursue});
+  if(s.hp)v.hp=s.hp;
+  MS.spawned.push(v);return v;
 }
-function updateMission(dt){
-  if(MS.state==='failed'){MS.wait-=dt;if(MS.wait<=0)resetMissionWorld();return;}
-  if(MS.state==='toCar'){
-    if(P.inVeh===missionCar){
-      MS.state='drive';MS.timer=MI.limit;destRing.visible=true;carMarker.visible=false;
-      setObjective('Отгоните седан в автосалон <b>Pacific Autos</b> и остановитесь в отмеченной зоне');
-      $('mtimer').classList.remove('hidden');
-      subtitle('Лео','Так, салон на востоке. Поехали.');setTimeout(()=>subtitle(),3000);
-    }
-  }else if(MS.state==='drive'){
-    MS.timer-=dt;$('mtimer').textContent='ВРЕМЯ '+fmtT(MS.timer);
-    if(MS.timer<=0){failMission('Время вышло');return;}
-    if(missionCar.wrecked){failMission('Машина разбита');return;}
-    if(P.inVeh!==missionCar){carMarker.visible=true;setObjective('Вернитесь в <b>оранжевый седан</b>');}
-    else{
-      carMarker.visible=false;
-      setObjective('Отгоните седан в автосалон <b>Pacific Autos</b> и остановитесь в отмеченной зоне');
-      if(Math.hypot(missionCar.x-MI.dest.x,missionCar.z-MI.dest.z)<8&&Math.abs(missionCar.speed)<7)winMission();
+function spawnPursuers(o,r){
+  r.purs=[];r.bust=0;r.pt=0;
+  const p=pPos();
+  for(let n=0;n<o.n;n++){
+    for(let g=0;g<40;g++){
+      const ix=ri(0,4),iz=ri(0,4),d=DIRS[ri(0,3)],jx=ix+d[0],jz=iz+d[1];
+      if(jx<0||jx>4||jz<0||jz>4)continue;
+      const x=ROADS[ix]+d[0]*40+(-d[1])*3,z=ROADS[iz]+d[1]*40+d[0]*3,dist=Math.hypot(x-p.x,z-p.z);
+      if(dist<100||dist>280)continue;
+      const v=spawnAI({type:'police',color:0x1c2f55,x,z,ix:jx,iz:jz,dx:d[0],dz:d[1],route:nearNode(p.x,p.z),spd:o.spd||1.6,pursue:true});
+      v.speed=8;r.purs.push(v);break;
     }
   }
+}
+function updPursuers(r,dt){
+  const p=pPos();r.pt-=dt;
+  if(r.pt<=0){r.pt=0.4;const nn=nearNode(p.x,p.z);for(const v of r.purs){v.ai.route=nn;v.ai.stop=false;}}
+  const spd=P.inVeh?Math.abs(P.inVeh.speed):0;
+  let near=false;for(const v of r.purs)if(Math.hypot(v.x-p.x,v.z-p.z)<6)near=true;
+  if(near&&spd<3)r.bust+=dt;else r.bust=Math.max(0,r.bust-dt);
+  if(r.bust>=3){failMission('Вас поймали');return true;}
+  return false;
+}
+function clearMissionObjects(){
+  for(const v of MS.spawned.slice())dropVeh(v);
+  MS.spawned=[];
+  if(MS.actor){scene.remove(MS.actor);MS.actor=null;}
+  MS.markCar=null;MS.sd=null;MS.rt=null;MS.car=null;MS.hud='';
+  destRing.visible=false;carMarker.visible=false;mTargets=[];
+  $('mtimer').classList.add('hidden');
+}
+function placeMissionCar(){
+  const c=missionCar;
+  if(P.inVeh===c)exitVehicle(true);
+  c.x=MI.car.x;c.z=MI.car.z;c.h=MI.car.h;c.speed=0;c.kx=c.kz=0;c.steer=0;c.hp=100;c.driver=null;c.ai=null;c.sleep=false;c.wrecked=false;c.fireT=0;
+  const col=MIS[Math.min(MS.n,NMIS-1)].car;
+  c.bodies.forEach(b=>{b.material=mat(col);});
+}
+function resetMissionWorld(){
+  MS.done=MS.n>=NMIS;
+  MS.state=MS.done?'done':'idle';MS.wait=0;MS.si=0;
+  clearMissionObjects();
+  placeMissionCar();
+  dannyMarker.visible=!MS.done;
+  setObjective(idleObjective());
+}
+function startMission(){
+  const def=MIS[MS.n];
+  MS.state='dialog';controlLock=true;dannyMarker.visible=false;
+  P.heading=Math.atan2(MI.start.x-P.x,MI.start.z-P.z);
+  placeMissionCar();
+  playSeq(def.dlg,()=>{
+    if(MS.state!=='dialog')return;
+    const go=()=>{
+      if(MS.state!=='dialog')return;
+      controlLock=false;MS.state='active';MS.left=0;
+      bigMsg('МИССИЯ '+(MS.n+1),def.name,'pass');
+      beginStage(0);
+    };
+    if(def.time!=null){
+      $('fade').style.opacity=1;
+      setTimeout(()=>{if(MS.state!=='dialog')return;gameTime=def.time;$('fade').style.opacity=0;go();},800);
+    }else go();
+  });
+}
+function beginStage(i){
+  MS.si=i;const d=MIS[MS.n].stages[i];MS.sd=d;MS.rt={};MS.hud='';
+  STG[d.t].init(d,MS.rt);
+  MS.timer=d.timer||0;
+  if(d.pursuers)spawnPursuers(d.pursuers,MS.rt);
+  setObjective(d.obj||'');
+  if(d.say){subtitle(d.say[0],d.say[1]);setTimeout(()=>subtitle(),3200);}
+  refreshTargets();
+}
+function endStage(){
+  const r=MS.rt;
+  if(r){dropVeh(r.tgt);if(r.purs)for(const v of r.purs)dropVeh(v);}
+  if(MS.actor){scene.remove(MS.actor);MS.actor=null;}
+  MS.markCar=null;destRing.visible=false;
+}
+function nextStage(){
+  if(MS.sd&&MS.sd.timer)MS.left=MS.timer;
+  endStage();
+  if(MS.si+1>=MIS[MS.n].stages.length)finishMission();else beginStage(MS.si+1);
+}
+function failMission(reason){
+  if(!missionActive())return;
+  MS.state='failed';MS.wait=4.5;seq=null;subtitle();
+  bigMsg('МИССИЯ ПРОВАЛЕНА',reason,'fail');jingle(false);
+  $('mtimer').classList.add('hidden');setObjective('');carMarker.visible=false;dannyMarker.visible=false;destRing.visible=false;mTargets=[];
+  for(const v of MS.spawned)if(v.ai)v.ai.hold=true;
+  controlLock=false;
+}
+function finishMission(){
+  const def=MIS[MS.n],bonus=Math.floor(Math.max(0,MS.left||0))*(def.bonus||0),reward=def.reward+bonus;
+  money+=reward;MS.n++;MS.done=MS.n>=NMIS;MS.state=MS.done?'done':'idle';
+  bigMsg('МИССИЯ ВЫПОЛНЕНА!','+ $'+reward+(bonus?' (бонус за время: $'+bonus+')':''),'pass');jingle(true);
+  clearMissionObjects();
+  dannyMarker.visible=!MS.done;setObjective(idleObjective());saveGame(true);
+  setTimeout(()=>{
+    if(state==='playing'&&!seq)playSeq(def.outro,MS.done?()=>bigMsg('ПРОДОЛЖЕНИЕ СЛЕДУЕТ...','igramanovv games','pass'):null);
+  },2500);
+}
+function refreshTargets(){
+  mTargets=[];
+  const d=MS.sd;if(!d||MS.state!=='active'){carMarker.visible=false;return;}
+  const g=STG[d.t].tg;if(g)g(d,MS.rt,mTargets);
+  carMarker.visible=!!MS.markCar;
+  dannyMarker.visible=!!(MS.actor&&!MS.rt.started);
+}
+const STG={
+  car:{
+    init(d,r){
+      if(d.spawn){const s=d.spawn;r.car=addVehicle(s.x,s.z,s.h||0,s.color,s.type,null);MS.spawned.push(r.car);r.any=false;}
+      else{r.car=missionCar;r.any=!!d.any;}
+      MS.markCar=r.car;
+    },
+    upd(d,r){
+      if(r.car.wrecked)return 'Машина разбита';
+      const v=P.inVeh;
+      if(v&&!v.wrecked&&(r.any||v===r.car)){MS.car=v;return 'done';}
+    },
+    tg(d,r,out){out.push({x:r.car.x,z:r.car.z,col:'#ffc933',label:d.label||'МАШИНА'});}
+  },
+  visit:{
+    init(d,r){
+      r.i=0;r.dw=0;const R=d.r||8;
+      destRing.scale.set(R/7,1,R/7);destRing.position.set(d.pts[0][0],0,d.pts[0][1]);destRing.visible=true;
+    },
+    upd(d,r,dt){
+      if(MS.car&&MS.car.wrecked&&d.veh==='need')return 'Машина разбита';
+      const R=d.r||8,pt=d.pts[r.i],v=P.inVeh,p=pPos(),n=d.pts.length;
+      let ok=true;
+      if(d.veh==='need'&&!v){ok=false;setObjective('Вернитесь в <b>машину</b>!');}
+      else if(d.veh==='foot'&&v){ok=false;setObjective('Выйдите из машины — дальше <b>пешком</b>');}
+      else setObjective(d.obj);
+      MS.hud=n>1?'ТОЧКА '+(r.i+1)+'/'+n:'';
+      if(ok&&Math.hypot(p.x-pt[0],p.z-pt[1])<R&&(!d.stop||!v||Math.abs(v.speed)<7)){
+        if(d.dwell){
+          r.dw+=dt;
+          MS.hud=(n>1?'ТОЧКА '+(r.i+1)+'/'+n+' · ':'')+'ЗАДЕРЖИТЕСЬ '+Math.max(0,Math.ceil(d.dwell-r.dw))+' с';
+          if(r.dw<d.dwell)return;
+        }
+        r.dw=0;r.i++;
+        if(r.i>=n)return 'done';
+        destRing.position.set(d.pts[r.i][0],0,d.pts[r.i][1]);
+        tone(880,0.18,'triangle',0.2);tone(1175,0.22,'triangle',0.18,0.12);
+      }else if(r.dw>0)r.dw=Math.max(0,r.dw-dt*2);
+    },
+    tg(d,r,out){
+      const c=d.pts[r.i];if(!c)return;out.push({x:c[0],z:c[1],sq:true});
+      if(r.i+1<d.pts.length){const q=d.pts[r.i+1];out.push({x:q[0],z:q[1],col:'#bbbbbb'});}
+    }
+  },
+  tail:{
+    init(d,r){r.tgt=spawnAI(Object.assign({hold:true},d.spawn));MS.markCar=r.tgt;r.sus=0;r.lost=0;r.arrive=0;r.go=false;},
+    upd(d,r,dt){
+      const t=r.tgt;
+      if(t.wrecked)return 'Цель уничтожена';
+      const p=pPos(),dd=Math.hypot(t.x-p.x,t.z-p.z),a=t.ai;
+      if(!r.go){
+        if(P.inVeh&&dd<55){r.go=true;a.hold=false;subtitle('Лео','Вот он. Держим дистанцию.');setTimeout(()=>subtitle(),2800);}
+        else{MS.hud='Подъедьте ближе к Волкову';return;}
+      }
+      if(a.stop&&Math.abs(t.speed)<0.6){
+        if(dd<45){
+          r.arrive+=dt;MS.hud='НАБЛЮДАЙТЕ...';
+          setObjective('Цель остановилась у склада. Не двигайтесь, <b>наблюдайте</b>');
+          if(r.arrive>=3)return 'done';
+        }else{r.arrive=0;MS.hud='ПОДЪЕДЬТЕ БЛИЖЕ';setObjective('Цель остановилась. Подъедьте ближе, но не вплотную');}
+        return;
+      }
+      if(dd<11&&Math.abs(t.speed)>0.5)r.sus+=dt/4;else r.sus=Math.max(0,r.sus-dt/6);
+      if(dd>90)r.lost+=dt;else r.lost=Math.max(0,r.lost-dt*2);
+      if(r.sus>=1)return 'Волков вас заметил';
+      if(r.lost>=6)return 'Вы потеряли цель';
+      let txt='ДИСТАНЦИЯ '+Math.round(dd)+' м';
+      if(r.sus>0.25)txt+=' · ОН ВАС ЗАМЕТИЛ?';else if(dd>70)txt+=' · НЕ ОТСТАВАЙТЕ';
+      MS.hud=txt;setObjective(d.obj);
+    },
+    tg(d,r,out){out.push({x:r.tgt.x,z:r.tgt.z,col:'#e74c3c',label:'ЦЕЛЬ'});}
+  },
+  chase:{
+    init(d,r){r.tgt=spawnAI(Object.assign({hold:!d.now},d.spawn));MS.markCar=r.tgt;r.lost=0;r.go=!!d.now;},
+    upd(d,r,dt){
+      const t=r.tgt;
+      if(t.wrecked)return 'done';
+      const p=pPos(),dd=Math.hypot(t.x-p.x,t.z-p.z);
+      if(!r.go){
+        if(P.inVeh&&dd<60){r.go=true;t.ai.hold=false;}
+        else{MS.hud='Подъедьте к цели';return;}
+      }
+      if(dd>150)r.lost+=dt;else r.lost=Math.max(0,r.lost-dt*2);
+      if(r.lost>=8)return 'Цель ушла';
+      if(d.failOnArrive&&t.ai.stop&&Math.abs(t.speed)<0.6)return 'Груз ушёл в порт';
+      MS.hud='ЦЕЛЬ: '+Math.round(dd)+' м · ПРОЧНОСТЬ '+Math.max(0,Math.round(t.hp))+'%'+(r.lost>2?' · НЕ ОТСТАВАЙТЕ':'');
+      setObjective(d.obj);
+    },
+    tg(d,r,out){out.push({x:r.tgt.x,z:r.tgt.z,col:'#e74c3c',label:'ЦЕЛЬ'});}
+  },
+  talk:{
+    init(d,r){MS.actor=spawnActor(d.who,d.at[0],d.at[1],d.face||0);r.started=false;r.fin=false;},
+    upd(d,r){if(r.fin)return 'done';},
+    tg(d,r,out){const a=MS.actor;if(a)out.push({x:a.position.x,z:a.position.z,col:'#ffc933',label:d.name||''});}
+  }
+};
+function updateMission(dt){
+  if(MS.state==='failed'){MS.wait-=dt;if(MS.wait<=0)resetMissionWorld();return;}
+  if(MS.state!=='active'){mTargets=[];return;}
+  const d=MS.sd,r=MS.rt;
+  if(d.timer){MS.timer-=dt;if(MS.timer<=0){failMission('Время вышло');return;}}
+  if(d.keepHp&&MS.car&&P.inVeh===MS.car&&MS.car.hp<d.keepHp){failMission('Машина слишком повреждена');return;}
+  if(r.purs&&updPursuers(r,dt))return;
+  const res=STG[d.t].upd(d,r,dt);
+  if(res==='done'){nextStage();return;}
+  if(res){failMission(res);return;}
+  let h=MS.hud||'';if(d.timer)h='ВРЕМЯ '+fmtT(MS.timer)+(h?' · '+h:'');
+  const mt=$('mtimer');
+  if(h){mt.classList.remove('hidden');if(mt._h!==h){mt._h=h;mt.textContent=h;}}else mt.classList.add('hidden');
+  refreshTargets();
 }
 
 /* ---------- player ---------- */
@@ -926,13 +1440,14 @@ function die(){
   dead=true;deadT=0;controlLock=true;
   bigMsg('ВЫ ПОГИБЛИ','Расходы на лечение: $'+Math.min(money,100),'fail');
   if(P.inVeh)exitVehicle(true);
-  if(MS.state==='toCar'||MS.state==='drive')failMission('Вы погибли');
+  if(MS.state==='dialog'){seq=null;subtitle();MS.state='idle';dannyMarker.visible=!MS.done;}
+  else if(missionActive())failMission('Вы погибли');
 }
 function updateDead(dt){
   deadT+=dt;
   if(deadT>2.2)$('fade').style.opacity=1;
   if(deadT>3.4){
-    money-=Math.min(money,100);P.hp=100;P.x=-91.6;P.z=24;P.vx=P.vz=P.kx=P.kz=0;P.y=0;P.heading=Math.PI;camYaw=Math.PI;
+    money-=Math.min(money,100);P.hp=100;P.x=SP.x;P.z=SP.z;P.vx=P.vz=P.kx=P.kz=0;P.y=0;P.heading=-Math.PI/2;camYaw=-Math.PI/2;
     dead=false;controlLock=false;$('fade').style.opacity=0;
   }
 }
@@ -995,6 +1510,9 @@ function drawMap(){
   }
   g.fillStyle='#c9c9c9';
   for(const r of ROADS){g.fillRect(r+320-7,20,14,600);g.fillRect(20,r+320-7,600,14);}
+  g.strokeStyle='#c9c9c9';g.lineWidth=9;g.beginPath();g.arc(RING.cx+320,RING.cz+320,15.5,0,PI2);g.stroke();
+  g.fillStyle='#c9c9c9';g.fillRect(-93+320,RING.cz+320-4.5,23,9);
+  g.fillStyle='#4f9a45';g.beginPath();g.arc(RING.cx+320,RING.cz+320,10,0,PI2);g.fill();
 }
 function drawRadar(){
   const Rd=100,s=0.8,al=camYaw-Math.PI,ca=Math.cos(al),sa=Math.sin(al);
@@ -1012,8 +1530,7 @@ function drawRadar(){
     else{rctx.beginPath();rctx.arc(Rd+rx,Rd+ry,6,0,PI2);rctx.fill();rctx.stroke();}
   };
   if(MS.state==='idle')blip(MI.start.x,MI.start.z,'#ffc933',false);
-  if(carMarker.visible)blip(missionCar.x,missionCar.z,'#ffc933',false);
-  if(destRing.visible)blip(MI.dest.x,MI.dest.z,'#ffc933',true);
+  for(const t of mTargets)blip(t.x,t.z,t.col||'#ffc933',!!t.sq);
   rctx.save();rctx.translate(Rd,Rd);rctx.rotate(camYaw-(P.inVeh?P.inVeh.h:P.heading));
   rctx.fillStyle='#fff';rctx.strokeStyle='#000';rctx.lineWidth=2;
   rctx.beginPath();rctx.moveTo(0,-9);rctx.lineTo(7,8);rctx.lineTo(0,4);rctx.lineTo(-7,8);rctx.closePath();rctx.fill();rctx.stroke();
@@ -1022,7 +1539,8 @@ function drawRadar(){
   rctx.fillText('N',Rd+(Rd-14)*sa,Rd-(Rd-14)*ca);
   rctx.beginPath();rctx.arc(Rd,Rd,Rd-2,0,PI2);rctx.strokeStyle='#111';rctx.lineWidth=4;rctx.stroke();
 }
-function zoneName(x){
+function zoneName(x,z){
+  if(x>-92&&x<-8&&z>-6&&z<92)return'ГРОУВ-СТРИТ';
   if(x<-207)return'ПОРТ ПАСИФИК';if(x<-145)return'ВЕСТ-ХИЛЛС';if(x<-55)return'ГРОУВ-СТРИТ';
   if(x<7)return'МЭЙПЛ-ХАЙТС';if(x<107)return'ЦЕНТР';if(x<207)return'ДАУНТАУН';return'ИСТ-ИНДАСТРИАЛ';
 }
@@ -1035,7 +1553,7 @@ function updateHUD(dt){
   $('clock').textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
   $('money').textContent='$'+String(Math.max(0,Math.floor(money))).padStart(8,'0');
   $('hpfill').style.width=clamp(P.hp,0,100)+'%';
-  const zn=zoneName(P.x);if(zn!==lastZone){lastZone=zn;showZone(zn);}
+  const zn=zoneName(P.x,P.z);if(zn!==lastZone){lastZone=zn;showZone(zn);}
   const v=P.inVeh;
   if(v){
     $('speedo').classList.remove('hidden');$('spd').textContent=Math.round(Math.abs(v.speed)*3.6);
@@ -1047,7 +1565,7 @@ function updateHUD(dt){
     else{
       const nv=nearestVeh(4.2);
       if(nv)pr='<b>F</b> — сесть в машину';
-      if(!controlLock&&Math.hypot(P.x-danny.position.x,P.z-danny.position.z)<3.4)pr='<b>E</b> — поговорить с Дэнни';
+      if(!controlLock&&currentAction()==='talk')pr='<b>E</b> — поговорить';
     }
   }
   if($('prompt').innerHTML!==pr)$('prompt').innerHTML=pr;
@@ -1070,8 +1588,10 @@ function updateGame(dt){
   P.group.position.set(P.x,P.y,P.z);P.group.rotation.y=P.heading;
   // markers
   const tm=performance.now()/1000;
-  dannyMarker.position.set(danny.position.x,2.9+Math.sin(tm*3)*0.15,danny.position.z);dannyMarker.rotation.y=tm*2;
-  carMarker.position.set(missionCar.x,3.4+Math.sin(tm*3)*0.2,missionCar.z);carMarker.rotation.y=tm*2;
+  const mb=MS.actor||danny;
+  dannyMarker.position.set(mb.position.x,2.9+Math.sin(tm*3)*0.15,mb.position.z);dannyMarker.rotation.y=tm*2;
+  const mt=MS.markCar||missionCar;
+  carMarker.position.set(mt.x,3.4+Math.sin(tm*3)*0.2,mt.z);carMarker.rotation.y=tm*2;
   destRing.rotation.y=tm*0.5;
   updateCamera(dt);
   updateHUD(dt);
@@ -1080,15 +1600,15 @@ function updateGame(dt){
 
 /* ---------- save / load ---------- */
 function saveGame(silent){
-  store.set('ps_save',{money,x:P.inVeh?P.inVeh.x:P.x,z:P.inVeh?P.inVeh.z:P.z,done:MS.done,t:gameTime});
+  store.set('ps_save',{money,x:P.inVeh?P.inVeh.x:P.x,z:P.inVeh?P.inVeh.z:P.z,done:MS.done,n:MS.n,t:gameTime});
   if(!silent)toast('Игра сохранена');
 }
 function resetGame(data){
   dead=false;controlLock=false;seq=null;subtitle();$('fade').style.opacity=0;
   if(P.inVeh){P.inVeh.driver=null;P.inVeh=null;}
   P.group.visible=true;P.hp=100;P.vx=P.vz=P.kx=P.kz=0;P.y=0;P.vy=0;P.hurtT=99;
-  P.x=-91.6;P.z=24;P.heading=Math.PI;camYaw=Math.PI;camPitch=0.3;money=0;MS.done=false;gameTime=16.5;
-  if(data){money=data.money||0;MS.done=!!data.done;P.x=data.x;P.z=data.z;gameTime=data.t||16.5;}
+  P.x=SP.x;P.z=SP.z;P.heading=-Math.PI/2;camYaw=-Math.PI/2;camPitch=0.3;money=0;MS.done=false;MS.n=0;gameTime=16.5;
+  if(data){money=data.money||0;MS.n=(data.n!==undefined)?data.n:(data.done?1:0);P.x=data.x;P.z=data.z;gameTime=data.t||16.5;}
   resetMissionWorld();
 }
 
@@ -1111,12 +1631,13 @@ function openPanel(id,back){
 function closePanel(){if(!panelOpen)return;panelOpen.classList.add('hidden');panelOpen=null;if(panelBack)panelBack();}
 $('setBack').onclick=closePanel;$('ctrlBack').onclick=closePanel;
 function syncSettingsUI(){
-  $('setSens').value=settings.sens;$('setVol').value=settings.vol;$('setShadow').checked=settings.shadows;$('setDist').value=settings.dist;$('setFull').checked=!!(document.fullscreenElement||document.webkitFullscreenElement);$('setTouch').checked=touchMode;
+  $('setSens').value=settings.sens;$('setVol').value=settings.vol;$('setShadow').checked=settings.shadows;$('setDist').value=settings.dist;$('setHero').value=heroName();$('setFull').checked=!!(document.fullscreenElement||document.webkitFullscreenElement);$('setTouch').checked=touchMode;
 }
 $('setSens').oninput=e=>{settings.sens=+e.target.value;store.set('ps_settings',settings);};
 $('setVol').oninput=e=>{settings.vol=+e.target.value;if(master)master.gain.value=settings.vol/100;store.set('ps_settings',settings);};
 $('setShadow').onchange=e=>{settings.shadows=e.target.checked;sun.castShadow=settings.shadows;store.set('ps_settings',settings);};
 $('setDist').onchange=e=>{settings.dist=+e.target.value;applyDist();store.set('ps_settings',settings);};
+$('setHero').oninput=e=>{settings.hero=e.target.value.slice(0,24);store.set('ps_settings',settings);};
 
 function requestLock(){try{const p=renderer.domElement.requestPointerLock();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
 function showMain(){
@@ -1183,6 +1704,7 @@ document.addEventListener('mousemove',e=>{
 window.addEventListener('blur',()=>{keysClear();if(state==='playing')showPause();});
 document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{
+  if(e.target&&e.target.tagName==='INPUT'&&e.target.type==='text')return;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
   if(state==='splash'){enterFromSplash();return;}
   if(state==='cutscene')return;
@@ -1429,14 +1951,23 @@ function actVehicle(){
   else{const v=nearestVeh(4.2);if(v)enterVehicle(v);}
 }
 function nearDanny(){return Math.hypot(P.x-danny.position.x,P.z-danny.position.z)<3.4;}
+function nearActor(){const a=MS.actor;return !!a&&Math.hypot(P.x-a.position.x,P.z-a.position.z)<3.4;}
 function actTalk(){
-  if(P.inVeh||!nearDanny())return;
+  if(P.inVeh)return;
+  if(MS.state==='active'&&MS.sd&&MS.sd.t==='talk'&&MS.rt&&!MS.rt.started&&nearActor()){
+    const r=MS.rt,d=MS.sd;r.started=true;controlLock=true;
+    P.heading=Math.atan2(MS.actor.position.x-P.x,MS.actor.position.z-P.z);
+    playSeq(d.lines,()=>{controlLock=false;r.fin=true;});
+    return;
+  }
+  if(!nearDanny())return;
   if(MS.state==='idle')startMission();
   else if(MS.state==='done'){subtitle('Дэнни','Пока работы нет, Лео. Но город твой — покатайся!');setTimeout(()=>subtitle(),3500);}
 }
 function currentAction(){
   if(dead||controlLock||state!=='playing')return null;
   if(P.inVeh)return'exit';
+  if(MS.state==='active'&&MS.sd&&MS.sd.t==='talk'&&MS.rt&&!MS.rt.started&&nearActor())return'talk';
   if(nearDanny()&&(MS.state==='idle'||MS.state==='done'))return'talk';
   if(nearestVeh(4.2))return'enter';
   return null;
@@ -1581,6 +2112,7 @@ function drawFullMap(side){
   const X=x=>x+320,Z=z=>z+320;
   // Гроув-стрит подсвечена зелёным
   g.fillStyle='rgba(63,180,100,.5)';g.fillRect(X(-100)-7,20,14,600);
+  g.strokeStyle='rgba(63,180,100,.55)';g.lineWidth=9;g.beginPath();g.arc(X(RING.cx),Z(RING.cz),15.5,0,PI2);g.stroke();g.fillRect(X(-93),Z(RING.cz)-4.5,23,9);
   // границы районов
   g.save();g.setLineDash([5,5]);g.strokeStyle='rgba(255,255,255,.28)';g.lineWidth=1;
   for(const x of[-207,-145,-55,7,107,207]){g.beginPath();g.moveTo(X(x),20);g.lineTo(X(x),620);g.stroke();}
@@ -1603,8 +2135,8 @@ function drawFullMap(side){
   }
   label('С ↑',X(-280),Z(-280),'#fff');
   // старт и Дэнни
-  dot(X(-91.6),Z(24),'#3fb36b',true);
-  label('СТАРТ',X(-91.6)+r*1.7,Z(24)+r*0.5,'#9df0b8','left');
+  dot(X(SP.x),Z(SP.z),'#3fb36b',true);
+  label('СТАРТ',X(SP.x)+r*1.7,Z(SP.z)+r*0.5,'#9df0b8','left');
   if(!MS.done){
     dot(X(MI.start.x),Z(MI.start.z),'#ffc933',false);
     label('ДЭННИ',X(MI.start.x)-r*1.7,Z(MI.start.z)-r*0.5,'#ffe27a','right');
@@ -1612,12 +2144,10 @@ function drawFullMap(side){
   // автосалон
   dot(X(238),Z(150),'#d6322e',true);
   label('PACIFIC AUTOS',X(238)+r,Z(150)-r*2.3,'#ffb3b0','right');
-  if(MS.state==='toCar'||MS.state==='drive'){
-    g.strokeStyle='#ffc933';g.lineWidth=2;g.beginPath();g.arc(X(MI.dest.x),Z(MI.dest.z),7,0,PI2);g.stroke();
-  }
-  if(MS.state==='toCar'){
-    dot(X(missionCar.x),Z(missionCar.z),'#e8731a',false);
-    label('СЕДАН',X(missionCar.x)+r*1.7,Z(missionCar.z),'#ffd0a0','left');
+  for(const t of mTargets){
+    if(t.sq){g.strokeStyle='#ffc933';g.lineWidth=2;g.beginPath();g.arc(X(t.x),Z(t.z),7,0,PI2);g.stroke();}
+    else dot(X(t.x),Z(t.z),t.col||'#ffc933',false);
+    if(t.label)label(t.label,X(t.x)+r*1.7,Z(t.z),'#ffe27a','left');
   }
   // игрок
   if(mapShowPlayer){
@@ -1640,9 +2170,9 @@ window.addEventListener('resize',()=>{if(panelOpen&&panelOpen.id==='mapPanel')dr
 /* ---------- init ---------- */
 let splashReady=false;
 function initEntities(){
-  P.group=buildHuman({skin:0xc98b61,shirt:0xf2f2f2,pants:0x2a4a7c,hair:0x151515});scene.add(P.group);
-  danny=buildHuman({skin:0x8d5a3b,shirt:0x2e7d32,pants:0x3b3b3b,hair:0x111111});
-  danny.position.set(MI.start.x,0,MI.start.z);danny.rotation.y=-Math.PI/2;scene.add(danny);
+  P.group=buildHuman(LOOKS.leo);scene.add(P.group);
+  danny=buildHuman(LOOKS.danny);
+  danny.position.set(MI.start.x,0,MI.start.z);danny.rotation.y=Math.atan2(SP.x-MI.start.x,SP.z-MI.start.z);scene.add(danny);
   colBox(MI.start.x,MI.start.z,0.7,0.7,2);
   const coneGeo=new THREE.ConeGeometry(0.5,1.2,4);coneGeo.rotateX(Math.PI);
   dannyMarker=new THREE.Mesh(coneGeo,bmat(0xffc933));scene.add(dannyMarker);
@@ -1655,11 +2185,11 @@ function initEntities(){
   destRing.position.set(MI.dest.x,0,MI.dest.z);destRing.visible=false;scene.add(destRing);
   missionCar=addVehicle(MI.car.x,MI.car.z,MI.car.h,0xe8731a,'sedan');
   // parked cars
-  const types=Object.keys(TYPES);let n=0,guard=0;
+  const types=TRAFFIC_TYPES;let n=0,guard=0;
   while(n<16&&guard++<200){
     const vert=Math.random()<0.5,road=ROADS[ri(0,4)],side=Math.random()<0.5?-1:1,t=pick([-250,-150,-50,50,150,250])+rr(-25,25);
     const off=road+side*5.4,x=vert?off:t,z=vert?t:off;
-    if(Math.hypot(x+91.6,z-24)<25||Math.hypot(x-MI.car.x,z-MI.car.z)<10)continue;
+    if(Math.hypot(x-SP.x,z-SP.z)<25||Math.hypot(x-MI.car.x,z-MI.car.z)<10)continue;
     let ok=true;for(const v of vehicles)if(Math.hypot(v.x-x,v.z-z)<7)ok=false;
     if(!ok)continue;
     const dirv=vert?(side>0?[0,-1]:[0,1]):(side>0?[1,0]:[-1,0]);
@@ -1671,7 +2201,7 @@ function initEntities(){
     const ix=ri(0,4),iz=ri(0,4),d=pick(DIRS);
     const jx=ix+d[0],jz=iz+d[1];if(jx<0||jx>4||jz<0||jz>4)continue;
     const dist=rr(14,86),x=ROADS[ix]+d[0]*dist+(-d[1])*3,z=ROADS[iz]+d[1]*dist+d[0]*3;
-    if(Math.hypot(x+91.6,z-24)<35)continue;
+    if(Math.hypot(x-SP.x,z-SP.z)<35)continue;
     const v=addVehicle(x,z,Math.atan2(d[0],d[1]),pick(CARCOLORS),pick(types),{ix:jx,iz:jz,dx:d[0],dz:d[1],stun:0,blockT:0,ghost:0});
     v.speed=10;n++;
   }
