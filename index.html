@@ -120,7 +120,7 @@ body.touch #prompt,body.touch .hint{display:none}
 <div id="menu" class="ov hidden"><div class="bar t"></div><div class="bar b"></div>
  <div class="logo"><span class="a">Pacific</span><span class="b">State</span></div>
  <ul id="mainList" class="list"></ul>
- <div id="ver">Версия 2.0</div>
+ <div id="ver">Версия 3.5</div>
  <div class="hint">↑ ↓ — выбор &nbsp; Enter — подтвердить</div></div>
 <div id="pause" class="ov hidden"><h1>ПАУЗА</h1><ul id="pauseList" class="list"></ul></div>
 <div id="loading" class="ov hidden"><div class="logo"><span class="a">Pacific</span><span class="b">State</span></div><div class="bx"><i></i></div></div>
@@ -146,6 +146,7 @@ body.touch #prompt,body.touch .hint{display:none}
 <div id="settings" class="panel hidden"><h2>НАСТРОЙКИ</h2>
  <label>Чувствительность мыши <input type="range" id="setSens" min="1" max="10" step="1"></label>
  <label>Громкость <input type="range" id="setVol" min="0" max="100"></label>
+ <label>Русская озвучка <input type="checkbox" id="setVoice"></label>
  <label>Тени <input type="checkbox" id="setShadow"></label>
  <label>Имя героя <input type="text" id="setHero" maxlength="24" style="width:170px;padding:6px 8px;font-size:16px"></label>
  <label>Дальность прорисовки <select id="setDist"><option value="0">Низкая</option><option value="1">Средняя</option><option value="2">Высокая</option></select></label>
@@ -178,7 +179,7 @@ const angDiff=(a,b)=>{let d=(b-a)%PI2;if(d>Math.PI)d-=PI2;if(d<-Math.PI)d+=PI2;r
 const rr=(a,b)=>a+Math.random()*(b-a);
 const ri=(a,b)=>Math.floor(rr(a,b+1));
 const store={get(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
-const settings=Object.assign({sens:5,vol:60,shadows:true,dist:1,hero:'Лео'},store.get('ps_settings')||{});
+const settings=Object.assign({sens:5,vol:60,shadows:true,dist:1,hero:'Лео',voice:true},store.get('ps_settings')||{});
 const heroName=()=>String(settings.hero||'').trim()||'Лео';
 let seed=1337;
 function R(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}
@@ -186,7 +187,7 @@ const pick=a=>a[Math.floor(R()*a.length)];
 const Rr=(a,b)=>a+R()*(b-a);
 
 /* ---------- audio ---------- */
-let AC=null,master=null,engGain=null,engOsc=null,musicTimer=null;
+let AC=null,master=null,engGain=null,engOsc=null,musicTimer=null,noiseBuf=null,skidGain=null,ambGain=null,sirenOsc=null,sirenGain=null,skidWant=0,birdT=3;
 function initAudio(){
   if(AC)return;
   try{
@@ -196,6 +197,14 @@ function initAudio(){
     const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=380;
     engGain=AC.createGain();engGain.gain.value=0;
     engOsc.connect(f);f.connect(engGain);engGain.connect(master);engOsc.start();
+    const nb=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate),nd=nb.getChannelData(0);
+    for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+    noiseBuf=nb;
+    const loopN=(type,freq,q)=>{const src=AC.createBufferSource();src.buffer=nb;src.loop=true;const fl=AC.createBiquadFilter();fl.type=type;fl.frequency.value=freq;fl.Q.value=q||0.7;const g=AC.createGain();g.gain.value=0;src.connect(fl);fl.connect(g);g.connect(master);src.start();return g;};
+    skidGain=loopN('bandpass',1700,2.5);ambGain=loopN('lowpass',420,0.7);
+    sirenOsc=AC.createOscillator();sirenOsc.type='triangle';sirenOsc.frequency.value=800;
+    const sf=AC.createBiquadFilter();sf.type='lowpass';sf.frequency.value=2200;
+    sirenGain=AC.createGain();sirenGain.gain.value=0;sirenOsc.connect(sf);sf.connect(sirenGain);sirenGain.connect(master);sirenOsc.start();
   }catch(e){AC=null;}
 }
 function tone(freq,dur,type,vol,when,slide){
@@ -222,6 +231,65 @@ function startMusic(){
 function stopMusic(){if(musicTimer){clearInterval(musicTimer);musicTimer=null;}}
 function thump(v){tone(130,0.28,'square',clamp(v/25,0.05,0.3),0,38);}
 function jingle(ok){const n=ok?[523,659,784,1047]:[330,262,196];n.forEach((f,i)=>tone(f,0.35,'triangle',0.2,i*0.17));}
+/* ---------- sound effects ---------- */
+function noiseBurst(dur,vol,type,f0,f1,when,q){
+  if(!AC||!noiseBuf)return;
+  const t=AC.currentTime+(when||0),src=AC.createBufferSource();src.buffer=noiseBuf;
+  const fl=AC.createBiquadFilter();fl.type=type||'lowpass';fl.Q.value=q||0.8;
+  fl.frequency.setValueAtTime(f0,t);if(f1)fl.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  const g=AC.createGain();g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  src.connect(fl);fl.connect(g);g.connect(master);src.start(t,Math.random()*1.5);src.stop(t+dur+0.05);
+}
+const distVol=(x,z)=>clamp(1-Math.hypot(x-P.x,z-P.z)/160,0.08,1);
+function sfxMove(){tone(440,0.05,'square',0.05);}
+function sfxClick(){tone(700,0.06,'square',0.08);tone(1050,0.08,'square',0.06,0.05);}
+function sfxStep(run){noiseBurst(0.07,run?0.16:0.11,'lowpass',380+Math.random()*260,120,0);}
+function sfxDoor(){noiseBurst(0.09,0.35,'lowpass',900,150,0);tone(95,0.12,'square',0.14,0.01,55);noiseBurst(0.06,0.2,'bandpass',2200,900,0.1);}
+function sfxHurt(){tone(190,0.16,'sawtooth',0.14,0,80);noiseBurst(0.1,0.25,'lowpass',700,150,0);}
+function sfxBoom(x,z){const k=distVol(x,z);noiseBurst(1.5,0.8*k,'lowpass',1400,70,0);tone(62,0.9,'sine',0.5*k,0,26);noiseBurst(0.5,0.3*k,'bandpass',3000,400,0.05);}
+function carFx(v,thr,st,hb){
+  const sp=Math.abs(v.speed),ms=v.maxSpeed;
+  if((hb&&sp>9)||(Math.abs(st)>0.7&&sp>ms*0.62))skidWant=Math.min(0.2,0.04+sp/ms*0.16);
+}
+function ambience(on){if(AC&&ambGain)ambGain.gain.setTargetAtTime(on?0.05:0,AC.currentTime,0.4);}
+function audioFrame(dt){
+  if(!AC)return;
+  if(skidGain)skidGain.gain.setTargetAtTime(P.inVeh?skidWant:0,AC.currentTime,0.05);
+  skidWant=0;
+  let sg=0;const r=MS.rt;
+  if(r&&r.purs&&r.purs.length){let d=1e9;for(const v of r.purs)d=Math.min(d,Math.hypot(v.x-P.x,v.z-P.z));sg=clamp(1-d/130,0,1)*0.07;}
+  if(sirenGain){sirenGain.gain.setTargetAtTime(sg,AC.currentTime,0.1);if(sg>0)sirenOsc.frequency.setTargetAtTime(900+380*Math.sin(AC.currentTime*5.5),AC.currentTime,0.02);}
+  birdT-=dt;
+  if(birdT<=0){birdT=4+Math.random()*7;if(gameTime>6&&gameTime<19){const f=2600+Math.random()*900;tone(f,0.07,'sine',0.025);tone(f*1.2,0.07,'sine',0.025,0.1);tone(f*0.95,0.09,'sine',0.02,0.2);}else tone(1200+Math.random()*80,0.12,'sine',0.012);}
+}
+/* ---------- russian voice-over ---------- */
+const VOX={'Лео':[1.0,1.0,'m'],'Дэнни':[0.78,1.0,'m'],'Мара':[1.35,1.05,'f'],'Волков':[0.6,0.9,'m'],'Роз':[1.15,1.0,'f'],'Эл':[0.7,0.95,'m'],'Ортега':[0.75,0.95,'m'],'Диктор':[0.9,1.0,'m'],'Полиция':[0.55,1.1,'m'],'Прохожий':[1.05,1.15,'m']};
+let ruVoices=[],voiceBusy=false,voiceTok=0,barkCd=0;
+function loadVoices(){try{ruVoices=speechSynthesis.getVoices().filter(v=>/^ru/i.test(v.lang));}catch(e){}}
+try{if(window.speechSynthesis){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;}}catch(e){}
+function pickVoice(g){
+  if(!ruVoices.length)return null;
+  const fem=/milena|katya|irina|alena|svetlana|tatyana|yelena|female|женск/i,mal=/yuri|pavel|maxim|dmitry|male|мужск/i;
+  if(g==='f')return ruVoices.find(v=>fem.test(v.name))||ruVoices[0];
+  return ruVoices.find(v=>mal.test(v.name))||ruVoices.find(v=>!fem.test(v.name))||ruVoices[0];
+}
+function voiceStop(){voiceTok++;voiceBusy=false;try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}}
+function speak(who,text){
+  voiceStop();
+  if(settings.voice===false||!window.speechSynthesis||typeof SpeechSynthesisUtterance==='undefined')return false;
+  try{
+    const vx=VOX[who]||VOX['Лео'],tok=++voiceTok,u=new SpeechSynthesisUtterance(String(text).replace(/[«»]/g,''));
+    u.lang='ru-RU';u.pitch=vx[0];u.rate=vx[1];u.volume=clamp(settings.vol/100,0,1);
+    const v=pickVoice(vx[2]);if(v)u.voice=v;
+    const fin=()=>{if(tok===voiceTok)voiceBusy=false;};u.onend=fin;u.onerror=fin;
+    voiceBusy=true;speechSynthesis.speak(u);return true;
+  }catch(e){voiceBusy=false;return false;}
+}
+const BARKS=['Эй, смотри, куда прёшь!','Ты что творишь?!','Полегче, приятель!','Ах ты!..','Аккуратнее!'];
+function bark(){
+  if(seq||voiceBusy||barkCd>0||settings.voice===false)return;
+  barkCd=5;speak('Прохожий',BARKS[ri(0,BARKS.length-1)]);
+}
 
 /* ---------- renderer / scene ---------- */
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
@@ -754,7 +822,7 @@ function addVehicle(x,z,h,color,type,ai){
 function wreck(v){
   if(v.wrecked)return;v.wrecked=true;v.fireT=6;
   v.bodies.forEach(b=>{b.material=mat(0x2a2a2a);});
-  thump(40);
+  thump(40);sfxBoom(v.x,v.z);
 }
 function damageVeh(v,d){if(v.wrecked)return;v.hp-=d;if(v.hp<=0){v.hp=0;wreck(v);}}
 
@@ -796,7 +864,7 @@ const peds=[];
 
 function hurtPlayer(n){
   if(n<=0||dead)return;
-  P.hp-=n;P.hurtT=0;$('hurt').style.opacity=1;
+  P.hp-=n;P.hurtT=0;sfxHurt();$('hurt').style.opacity=1;
   setTimeout(()=>{$('hurt').style.opacity=0;},250);
   if(P.hp<=0){P.hp=0;die();}
 }
@@ -871,6 +939,7 @@ function updVehicle(v,dt){
     if(drv&&!controlLock&&!v.wrecked){thr=clamp((keys.KeyW?1:0)-(keys.KeyS?1:0)+(Math.abs(T.y)>0.3?-Math.sign(T.y):0),-1,1);st=clamp((keys.KeyA?1:0)-(keys.KeyD?1:0)-T.x,-1,1);hb=!!(keys.Space||T.btnA);}
     else if(!drv)hb=true;
     const ms=v.maxSpeed;
+    if(drv)carFx(v,thr,st,hb);
     if(thr>0)v.speed+=(v.speed<0?32:v.accel*(1-Math.max(0,v.speed)/ms)+2)*dt;
     else if(thr<0)v.speed-=(v.speed>0?36:10*(1+v.speed/9))*dt;
     else v.speed-=Math.sign(v.speed)*Math.min(Math.abs(v.speed),3.2*dt);
@@ -990,7 +1059,7 @@ function updPeds(dt){
       if(Math.abs(v.speed)<5)continue;
       const dx=p.x-v.x,dz=p.z-v.z;
       if(dx*dx+dz*dz<4){
-        p.down=true;p.downT=0;const l=Math.hypot(dx,dz)||1;p.kx=dx/l*8;p.kz=dz/l*8;thump(10);break;
+        p.down=true;p.downT=0;const l=Math.hypot(dx,dz)||1;p.kx=dx/l*8;p.kz=dz/l*8;thump(10);bark();break;
       }
     }
   }
@@ -999,18 +1068,21 @@ function updPeds(dt){
 /* ---------- mission helpers ---------- */
 function subtitle(who,text){
   const el=$('sub');
-  if(!who&&!text){el.innerHTML='';return;}
+  if(!who&&!text){el.innerHTML='';voiceStop();return;}
   const hn=heroName().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const t=String(text||'').replace(/Лео/g,hn);
   el.innerHTML=who?'<span class="'+(who==='Лео'?'wl':who==='Мара'?'mr':'who')+'">'+(who==='Лео'?hn:who)+':</span> '+t:t;
+  if(text&&state!=='paused')speak(who||'Лео',String(text).replace(/Лео/g,heroName()));
 }
 let seq=null;
 function playSeq(lines,done){seq={lines,i:0,t:0,done};showLine();}
-function showLine(){const l=seq.lines[seq.i];subtitle(l[0],l[1]);seq.t=l[2]||3.6;}
+function showLine(){const l=seq.lines[seq.i];seq.t=l[2]||3.6;seq.vt=String(l[1]).length*0.09+2.5;subtitle(l[0],l[1]);}
 function updateSeq(dt){
+  barkCd-=dt;
   if(!seq)return;
   seq.t-=dt;
-  if(seq.t<=0){
+  if(voiceBusy){seq.vt-=dt;if(seq.vt<=0)voiceBusy=false;}
+  if(seq.t<=0&&!voiceBusy){
     seq.i++;
     if(seq.i>=seq.lines.length){const d=seq.done;seq=null;subtitle();if(d)d();}
     else showLine();
@@ -1158,7 +1230,7 @@ function spawnAI(s){
   MS.spawned.push(v);return v;
 }
 function spawnPursuers(o,r){
-  r.purs=[];r.bust=0;r.pt=0;
+  r.purs=[];r.bust=0;r.pt=0;setTimeout(()=>{if(MS.rt===r&&!seq)speak('Полиция','Всем постам! Преследуем подозреваемого!');},600);
   const p=pPos();
   for(let n=0;n<o.n;n++){
     for(let g=0;g<40;g++){
@@ -1213,7 +1285,7 @@ function startMission(){
     const go=()=>{
       if(MS.state!=='dialog')return;
       controlLock=false;MS.state='active';MS.left=0;
-      bigMsg('МИССИЯ '+(MS.n+1),def.name,'pass');
+      bigMsg('МИССИЯ '+(MS.n+1),def.name,'pass');speak('Диктор','Миссия '+(MS.n+1)+'. '+def.name);
       beginStage(0);
     };
     if(def.time!=null){
@@ -1245,7 +1317,7 @@ function nextStage(){
 function failMission(reason){
   if(!missionActive())return;
   MS.state='failed';MS.wait=4.5;seq=null;subtitle();
-  bigMsg('МИССИЯ ПРОВАЛЕНА',reason,'fail');jingle(false);
+  bigMsg('МИССИЯ ПРОВАЛЕНА',reason,'fail');jingle(false);speak('Диктор','Миссия провалена. '+reason);
   $('mtimer').classList.add('hidden');setObjective('');carMarker.visible=false;dannyMarker.visible=false;destRing.visible=false;mTargets=[];
   for(const v of MS.spawned)if(v.ai)v.ai.hold=true;
   controlLock=false;
@@ -1253,7 +1325,7 @@ function failMission(reason){
 function finishMission(){
   const def=MIS[MS.n],bonus=Math.floor(Math.max(0,MS.left||0))*(def.bonus||0),reward=def.reward+bonus;
   money+=reward;MS.n++;MS.done=MS.n>=NMIS;MS.state=MS.done?'done':'idle';
-  bigMsg('МИССИЯ ВЫПОЛНЕНА!','+ $'+reward+(bonus?' (бонус за время: $'+bonus+')':''),'pass');jingle(true);
+  bigMsg('МИССИЯ ВЫПОЛНЕНА!','+ $'+reward+(bonus?' (бонус за время: $'+bonus+')':''),'pass');jingle(true);speak('Диктор','Миссия выполнена');
   clearMissionObjects();
   dannyMarker.visible=!MS.done;setObjective(idleObjective());saveGame(true);
   setTimeout(()=>{
@@ -1382,6 +1454,7 @@ function updateMission(dt){
 /* ---------- player ---------- */
 function exitVehicle(silent){
   const v=P.inVeh;if(!v)return;
+  if(!silent)sfxDoor();
   v.driver=null;P.inVeh=null;
   const lx=Math.cos(v.h),lz=-Math.sin(v.h);
   P.x=v.x+lx*2.3;P.z=v.z+lz*2.3;P.y=0;P.vx=P.vz=0;
@@ -1390,6 +1463,7 @@ function exitVehicle(silent){
 }
 function enterVehicle(v){
   if(v.ai)v.ai=null;
+  sfxDoor();
   v.driver='player';v.sleep=false;P.inVeh=v;P.group.visible=false;
   camMouseT=99;
 }
@@ -1432,6 +1506,7 @@ function updatePlayer(dt){
   }
   P.x=clamp(P.x,-298,298);P.z=clamp(P.z,-298,298);
   const spd=Math.hypot(P.vx,P.vz);
+  {const sk=Math.floor((P.phase+spd*dt*2.4)/Math.PI);if(sk!==P._sk){P._sk=sk;if(spd>0.8&&P.y<=0.05&&!dead)sfxStep(spd>5);}}
   P.phase+=spd*dt*2.4;P.amp=lerp(P.amp,clamp(spd/4,0,1)*0.9,1-Math.exp(-10*dt));
   animHuman(P.group,P.phase,P.amp);
 }
@@ -1581,7 +1656,7 @@ function updateHUD(dt){
 let sx=0;
 function updateGame(dt){
   gameTime=(gameTime+dt/180)%24;
-  updateSeq(dt);updateMission(dt);
+  updateSeq(dt);updateMission(dt);audioFrame(dt);
   if(dead)updateDead(dt);
   updatePlayer(dt);updateWorld(dt);
   if(P.inVeh){P.x=P.inVeh.x;P.z=P.inVeh.z;}
@@ -1618,8 +1693,8 @@ function openList(listEl,items){
   listEl.innerHTML='';const els=[];
   items.forEach((it,i)=>{
     const li=document.createElement('li');li.className='mi';li.textContent=it.label;
-    li.onmouseenter=()=>{act.idx=i;refreshSel();};
-    li.onclick=()=>{initAudio();it.fn();};
+    li.onmouseenter=()=>{if(act.idx!==i){act.idx=i;refreshSel();sfxMove();}};
+    li.onclick=()=>{initAudio();sfxClick();it.fn();};
     listEl.appendChild(li);els.push(li);
   });
   act={items,els,idx:0};refreshSel();
@@ -1631,12 +1706,13 @@ function openPanel(id,back){
 function closePanel(){if(!panelOpen)return;panelOpen.classList.add('hidden');panelOpen=null;if(panelBack)panelBack();}
 $('setBack').onclick=closePanel;$('ctrlBack').onclick=closePanel;
 function syncSettingsUI(){
-  $('setSens').value=settings.sens;$('setVol').value=settings.vol;$('setShadow').checked=settings.shadows;$('setDist').value=settings.dist;$('setHero').value=heroName();$('setFull').checked=!!(document.fullscreenElement||document.webkitFullscreenElement);$('setTouch').checked=touchMode;
+  $('setSens').value=settings.sens;$('setVol').value=settings.vol;$('setShadow').checked=settings.shadows;$('setDist').value=settings.dist;$('setHero').value=heroName();$('setVoice').checked=settings.voice!==false;$('setFull').checked=!!(document.fullscreenElement||document.webkitFullscreenElement);$('setTouch').checked=touchMode;
 }
 $('setSens').oninput=e=>{settings.sens=+e.target.value;store.set('ps_settings',settings);};
 $('setVol').oninput=e=>{settings.vol=+e.target.value;if(master)master.gain.value=settings.vol/100;store.set('ps_settings',settings);};
 $('setShadow').onchange=e=>{settings.shadows=e.target.checked;sun.castShadow=settings.shadows;store.set('ps_settings',settings);};
 $('setDist').onchange=e=>{settings.dist=+e.target.value;applyDist();store.set('ps_settings',settings);};
+$('setVoice').onchange=e=>{settings.voice=e.target.checked;if(!settings.voice)voiceStop();store.set('ps_settings',settings);};
 $('setHero').oninput=e=>{settings.hero=e.target.value.slice(0,24);store.set('ps_settings',settings);};
 
 function requestLock(){try{const p=renderer.domElement.requestPointerLock();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
@@ -1645,7 +1721,7 @@ function showMain(){
   ['hud','pause','loading'].forEach(i=>$(i).classList.add('hidden'));
   $('menu').classList.remove('hidden');
   if(document.pointerLockElement)document.exitPointerLock();
-  startMusic();
+  startMusic();ambience(false);voiceStop();
   openList($('mainList'),[
     {label:'НОВАЯ ИГРА',fn:()=>startPlay(null)},
     {label:'ЗАГРУЗИТЬ ИГРУ',fn:()=>{const d=store.get('ps_save');if(!d){toast('Нет сохранённой игры');return;}startPlay(d);}},
@@ -1661,7 +1737,7 @@ function startPlay(data){
   $('menu').classList.add('hidden');$('loading').classList.remove('hidden');
   const bar=$('loading').querySelector('i');bar.style.animation='none';void bar.offsetWidth;bar.style.animation='';
   setTimeout(()=>{
-    resetGame(data);stopMusic();
+    resetGame(data);stopMusic();ambience(true);
     $('loading').classList.add('hidden');$('hud').classList.remove('hidden');
     state='playing';lastZone='';keysClear();
     if(!data)setTimeout(()=>{if(state==='playing'&&MS.state==='idle'){subtitle('Лео','Вечер на Гроув-стрит. Надо найти Дэнни — он вроде что-то хотел.');setTimeout(()=>subtitle(),4500);}},800);
@@ -1670,7 +1746,7 @@ function startPlay(data){
 function keysClear(){for(const k in keys)keys[k]=false;}
 function showPause(){
   if(state!=='playing')return;
-  state='paused';keysClear();
+  state='paused';keysClear();ambience(false);try{if(window.speechSynthesis)speechSynthesis.pause();}catch(e){}
   $('pause').classList.remove('hidden');
   if(document.pointerLockElement)document.exitPointerLock();
   openPauseList();
@@ -1686,7 +1762,7 @@ function openPauseList(){
   ]);
 }
 function resumeGame(){
-  $('pause').classList.add('hidden');act=null;state='playing';requestLock();
+  $('pause').classList.add('hidden');act=null;state='playing';requestLock();ambience(true);try{if(window.speechSynthesis)speechSynthesis.resume();}catch(e){}
 }
 
 /* ---------- input ---------- */
@@ -1710,9 +1786,9 @@ window.addEventListener('keydown',e=>{
   if(state==='cutscene')return;
   if(panelOpen){if(e.code==='Escape'||e.code==='Enter')closePanel();return;}
   if(act&&(state==='menu'||state==='paused')){
-    if(e.code==='ArrowDown'||e.code==='KeyS'){act.idx=(act.idx+1)%act.items.length;refreshSel();}
-    else if(e.code==='ArrowUp'||e.code==='KeyW'){act.idx=(act.idx-1+act.items.length)%act.items.length;refreshSel();}
-    else if(e.code==='Enter'||e.code==='Space'){initAudio();act.items[act.idx].fn();}
+    if(e.code==='ArrowDown'||e.code==='KeyS'){act.idx=(act.idx+1)%act.items.length;refreshSel();sfxMove();}
+    else if(e.code==='ArrowUp'||e.code==='KeyW'){act.idx=(act.idx-1+act.items.length)%act.items.length;refreshSel();sfxMove();}
+    else if(e.code==='Enter'||e.code==='Space'){initAudio();sfxClick();act.items[act.idx].fn();}
     else if(e.code==='Escape'&&state==='paused')resumeGame();
     return;
   }
@@ -1900,6 +1976,7 @@ function drawCut(t){
     c.lineJoin='round';c.lineWidth=1.2;c.strokeStyle='#000';
     c.fillStyle='#fff';spaced(c,'PACIFIC',0,-0.8,0.5,'stroke');spaced(c,'PACIFIC',0,-0.8,0.5);
     c.fillStyle='#ffc933';spaced(c,'STATE',0,10.6,0.5,'stroke');spaced(c,'STATE',0,10.6,0.5);
+    c.font='700 3px Arial,sans-serif';c.fillStyle='#d8dde6';spaced(c,'ВЕРСИЯ 3.5',0,17,1.2);
     c.restore();
   }
   // кинематографические полосы и затемнение
